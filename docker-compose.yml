@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  # ── FastAPI Backend ──────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      - ./great_expectations:/app/great_expectations
+      - ./.etl_state:/app/.etl_state
+      - ./config:/app/config
+    env_file: .env
+    depends_on:
+      - db_source
+      - db_target
+    restart: unless-stopped
+
+  # ── React Frontend ───────────────────────────────────────
+  ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.ui
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # ── Source Database (demo) ───────────────────────────────
+  db_source:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: source_db
+      POSTGRES_USER: etl_user
+      POSTGRES_PASSWORD: etl_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_source:/var/lib/postgresql/data
+      - ./scripts/seed_source.sql:/docker-entrypoint-initdb.d/seed.sql
+
+  # ── Target / Warehouse Database ─────────────────────────
+  db_target:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: warehouse_db
+      POSTGRES_USER: etl_user
+      POSTGRES_PASSWORD: etl_pass
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata_target:/var/lib/postgresql/data
+
+volumes:
+  pgdata_source:
+  pgdata_target:

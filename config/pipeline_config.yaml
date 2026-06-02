@@ -1,0 +1,132 @@
+# ============================================================
+# ETL Pipeline Configuration
+# ============================================================
+
+pipeline:
+  name: "Customer Orders ETL"
+  version: "1.0.0"
+  schedule: "0 2 * * *"          # cron: 2 AM daily
+  timezone: "UTC"
+  owner: "data-engineering-team"
+  on_failure: "alert_and_stop"   # alert_and_stop | alert_and_continue
+
+# ── Source ────────────────────────────────────────────────
+source:
+  type: "postgresql"             # postgresql | mysql | csv | parquet | api
+  connection:
+    host: "${DB_SOURCE_HOST}"
+    port: 5432
+    database: "${DB_SOURCE_NAME}"
+    username: "${DB_SOURCE_USER}"
+    password: "${DB_SOURCE_PASS}"
+  tables:
+    - name: "orders"
+      primary_key: "order_id"
+      incremental_column: "updated_at"
+      incremental_strategy: "timestamp"   # timestamp | id | full_refresh
+    - name: "customers"
+      primary_key: "customer_id"
+      incremental_column: null
+      incremental_strategy: "full_refresh"
+    - name: "products"
+      primary_key: "product_id"
+      incremental_column: "updated_at"
+      incremental_strategy: "timestamp"
+
+# ── Staging ───────────────────────────────────────────────
+staging:
+  type: "postgresql"
+  connection:
+    host: "${DB_STAGING_HOST}"
+    port: 5432
+    database: "${DB_STAGING_NAME}"
+    username: "${DB_STAGING_USER}"
+    password: "${DB_STAGING_PASS}"
+  schema: "staging"
+
+# ── Target ────────────────────────────────────────────────
+target:
+  type: "postgresql"
+  connection:
+    host: "${DB_TARGET_HOST}"
+    port: 5432
+    database: "${DB_TARGET_NAME}"
+    username: "${DB_TARGET_USER}"
+    password: "${DB_TARGET_PASS}"
+  schema: "warehouse"
+  load_strategy: "upsert"        # insert | upsert | replace
+
+# ── Great Expectations ────────────────────────────────────
+great_expectations:
+  root_dir: "./great_expectations"
+  datasource_name: "etl_datasource"
+  suites:
+    raw:
+      name: "raw_data_suite"
+      checkpoint: "raw_checkpoint"
+      fail_on_error: true
+    transformed:
+      name: "transformed_data_suite"
+      checkpoint: "transformed_checkpoint"
+      fail_on_error: true
+
+# ── Transformations ───────────────────────────────────────
+transformations:
+  orders:
+    - type: "rename_columns"
+      mapping:
+        "cust_id": "customer_id"
+        "prod_id": "product_id"
+        "qty":     "quantity"
+    - type: "cast_types"
+      columns:
+        order_date:   "datetime"
+        amount:       "float"
+        quantity:     "int"
+    - type: "derive_column"
+      name: "total_value"
+      expression: "amount * quantity"
+    - type: "filter_rows"
+      condition: "status != 'CANCELLED'"
+    - type: "deduplicate"
+      subset: ["order_id"]
+      keep: "last"
+
+# ── Validation Rules ──────────────────────────────────────
+validation:
+  row_count_tolerance_pct: 1.0   # acceptable % variance between source/target
+  critical_columns:
+    orders:     ["order_id", "customer_id", "amount", "order_date"]
+    customers:  ["customer_id", "email"]
+    products:   ["product_id", "name", "price"]
+
+# ── Alerts ────────────────────────────────────────────────
+alerts:
+  email:
+    enabled: true
+    smtp_host: "${SMTP_HOST}"
+    smtp_port: 587
+    from: "etl-alerts@company.com"
+    to:
+      - "data-team@company.com"
+      - "oncall@company.com"
+  slack:
+    enabled: false
+    webhook_url: "${SLACK_WEBHOOK_URL}"
+    channel: "#data-alerts"
+  teams:
+    enabled: false
+    webhook_url: "${TEAMS_WEBHOOK_URL}"
+
+# ── Reporting ─────────────────────────────────────────────
+reporting:
+  output_dir: "./reports"
+  generate_ge_docs: true
+  retain_days: 30
+
+# ── Logging ───────────────────────────────────────────────
+logging:
+  level: "INFO"            # DEBUG | INFO | WARNING | ERROR
+  output_dir: "./logs"
+  format: "json"           # json | text
+  rotate_days: 14

@@ -1,0 +1,108 @@
+# ============================================================
+# ETL Pipeline Configuration — CNAIME Provider
+# ============================================================
+
+pipeline:
+  name: "CNAIME Provider ETL"
+  version: "1.0.0"
+  schedule: "0 2 * * *"
+  timezone: "UTC"
+  owner: "data-engineering-team"
+  on_failure: "alert_and_stop"
+
+# ── Source ────────────────────────────────────────────────
+source:
+  type: "mssql"
+  connection:
+    host: "DEV-SSIS01"
+    port: 1433
+    database: "ProvConv_CNAIME"
+    username: "CAS-PA01\JHernando"
+    password: "Stevengubaton@02"
+  tables:
+    - name: "RawData_UMCIME"
+      schema: "dbo"
+      primary_key: "ProviderID"
+      incremental_column: null
+      incremental_strategy: "full_refresh"
+
+# ── Target ────────────────────────────────────────────────
+target:
+  type: "mssql"
+  connection:
+    host: "DEV-SQL02"
+    port: 1433
+    database: "ProvStage_WrapNetworks_Master_CNAIME"
+    username: "CAS-PA01\JHernando"
+    password: "Stevengubaton@02"
+  schema: "dbo"
+  target_table: "Compass_MASTER_Provider"
+  load_strategy: "upsert"
+
+# ── Great Expectations ────────────────────────────────────
+great_expectations:
+  root_dir: "./great_expectations"
+  datasource_name: "cnaime_datasource"
+  suites:
+    raw:
+      name: "raw_data_suite"
+      checkpoint: "raw_checkpoint"
+      fail_on_error: true
+    transformed:
+      name: "transformed_data_suite"
+      checkpoint: "transformed_checkpoint"
+      fail_on_error: true
+
+# ── Transformations ───────────────────────────────────────
+transformations:
+  RawData_UMCIME:
+    - type: "deduplicate"
+      subset: ["ProviderID"]
+      keep: "last"
+    - type: "normalize_strings"
+      columns: ["ProviderName", "Address", "City", "State"]
+      strip: true
+      uppercase: false
+    - type: "fill_nulls"
+      columns:
+        Phone: ""
+        Fax: ""
+        Email: ""
+    - type: "add_metadata"
+      etl_timestamp: true
+      etl_source: "DEV-SSIS01.ProvConv_CNAIME.dbo.RawData_UMCIME"
+
+# ── Validation Rules ──────────────────────────────────────
+validation:
+  row_count_tolerance_pct: 1.0
+  critical_columns:
+    RawData_UMCIME:
+      - "ProviderID"
+
+# ── Alerts ────────────────────────────────────────────────
+alerts:
+  email:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 587
+    from: ""
+    to: []
+  slack:
+    enabled: false
+    webhook_url: ""
+  teams:
+    enabled: false
+    webhook_url: ""
+
+# ── Reporting ─────────────────────────────────────────────
+reporting:
+  output_dir: "./reports"
+  generate_ge_docs: true
+  retain_days: 30
+
+# ── Logging ───────────────────────────────────────────────
+logging:
+  level: "INFO"
+  output_dir: "./logs"
+  format: "json"
+  rotate_days: 14
