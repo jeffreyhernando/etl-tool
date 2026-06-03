@@ -22,6 +22,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .btn-secondary:hover{background:#2a3f5f}
 .btn-share{background:#0d2040 !important;color:#00d4ff !important;border:1px solid #00d4ff !important;font-weight:bold}
 .btn-share:hover{background:#00d4ff !important;color:#0a0e17 !important}
+.btn-export{background:#1a2c1a !important;color:#4ade80 !important;border:1px solid #2a4a2a !important;font-weight:bold}
+.btn-export:hover{background:#4ade80 !important;color:#0a0e17 !important}
 input[type="text"],input[type="password"],select{padding:8px;background:#1e2d45;border:1px solid #2a3f5f;color:#fff;margin:5px 0;width:300px;border-radius:4px}
 table{width:100%;border-collapse:collapse;margin-top:15px}
 th,td{border:1px solid #1e2d45;padding:8px;font-size:12px}
@@ -260,6 +262,7 @@ ETL TEST AUTOMATION TOOL
 <button id="cancelBtn" class="btn-cancel" onclick="cancelJob()" style="display:none">✕ CANCEL</button>
 <button class="btn-secondary" onclick="downloadCSV()">⬇ Download CSV</button>
 <button class="btn-share" onclick="copyCurrentJobShareLink()" id="shareCurrentBtn" style="display:none">🔗 Share This Result</button>
+<button class="btn-export" onclick="exportHTMLReport(currentJobId, API)" id="exportHtmlBtn" style="display:none">⬇ Export HTML Report</button>
 <button class="btn-secondary" onclick="window.open('etl_history_viewer.html')">↗ History</button>
 
 <div id="errorMessage" class="error-message" style="display:none"></div>
@@ -671,7 +674,9 @@ function setAllRules(rule){ state.fieldMappings.forEach(m=>{m.rule=rule;}); docu
 async function runTest(){
   if(comparisonRunning){alert("Comparison already running");return;}
   comparisonRunning=true; $('runBtn').disabled=true; $('runBtn').innerText="RUNNING...";
-  $('cancelBtn').style.display="inline-block"; $('shareCurrentBtn').style.display="none";
+  $('cancelBtn').style.display="inline-block";
+  $('shareCurrentBtn').style.display="none";
+  $('exportHtmlBtn').style.display="none";
   $('summary').style.display="block"; $('metricsRow').style.display="none";
   $('summaryContent').innerHTML="<p>Starting comparison...</p>";
   $('errorMessage').style.display="none"; $('virtualTableContainer').style.display="none";
@@ -711,6 +716,7 @@ async function pollJob(jobId){
         clearInterval(pollInterval); resetRunButton();
         showSummary(data.stats); showActiveFilters();
         $('shareCurrentBtn').style.display="inline-block";
+        $('exportHtmlBtn').style.display="inline-block";
         currentPage=1; currentStatusFilter=null; currentFieldFilter=null;
         await loadFieldSummary(jobId); await loadResultsPage();
       }
@@ -739,11 +745,8 @@ async function loadResultsPage(){
     updatePaginationControls();
     $('virtualTableContainer').style.display="block";
     $('paginationTop').style.display="flex"; $('paginationBottom').style.display="flex";
-
-    // Sync the status dropdown to reflect currentStatusFilter
     const sel = $('statusFilter');
     if (sel) sel.value = currentStatusFilter || "";
-
     const indicator=$('fieldFilterIndicator');
     if(indicator){
       if(currentFieldFilter){
@@ -758,12 +761,9 @@ async function loadResultsPage(){
 }
 function goToPage(page){if(page<1||page>totalPages)return;currentPage=page;loadResultsPage();}
 function changePageSize(){pageSize=Number($('pageSizeSelect').value);currentPage=1;loadResultsPage();}
-
-// Manual status change — preserve field filter, just update status
 function filterByStatus(){
   currentStatusFilter=$('statusFilter').value||null;
   currentPage=1;
-  // Update field filter bar hint if active
   if(currentFieldFilter){
     const indicator=$('fieldFilterIndicator');
     if(indicator) indicator.style.display="flex";
@@ -772,7 +772,6 @@ function filterByStatus(){
   }
   loadResultsPage();
 }
-
 function updatePaginationControls(){
   $('currentPageNum').innerText=currentPage; $('totalPagesNum').innerText=totalPages;
   $('currentPageNum2').innerText=currentPage; $('totalPagesNum2').innerText=totalPages;
@@ -879,37 +878,22 @@ function sortFieldSummary(col){
 function toggleSummary(){$('summaryBody').classList.toggle('hidden');$('summaryHeader').classList.toggle('collapsed');}
 function toggleFieldSummary(){$('fieldSummaryBody').classList.toggle('hidden');$('fieldSummaryHeader').classList.toggle('collapsed');}
 
-// ── FIX 1: drillDownField — auto-set currentStatusFilter based on field data ──
 function drillDownField(fieldName){
   currentFieldFilter = fieldName;
   currentPage = 1;
-
   const fieldData = fieldSummaryData.find(f => f.field === fieldName);
   if (fieldData) {
-    if (fieldData.mismatched > 0 && fieldData.null_mismatch > 0) {
-      // Both types — show all for this field, user can narrow manually
-      currentStatusFilter = null;
-    } else if (fieldData.mismatched > 0) {
-      currentStatusFilter = "MISMATCH";
-    } else if (fieldData.null_mismatch > 0) {
-      currentStatusFilter = "NULL_MISMATCH";
-    } else {
-      // Perfect field — jump to matched rows
-      currentStatusFilter = "MATCHED";
-    }
-  } else {
-    currentStatusFilter = null;
-  }
-
-  // Sync the status dropdown immediately so it doesn't look stale
+    if (fieldData.mismatched > 0 && fieldData.null_mismatch > 0) { currentStatusFilter = null; }
+    else if (fieldData.mismatched > 0) { currentStatusFilter = "MISMATCH"; }
+    else if (fieldData.null_mismatch > 0) { currentStatusFilter = "NULL_MISMATCH"; }
+    else { currentStatusFilter = "MATCHED"; }
+  } else { currentStatusFilter = null; }
   const sel = $('statusFilter');
   if (sel) sel.value = currentStatusFilter || "";
-
   loadResultsPage();
   $('virtualTableContainer').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
-// ── FIX 2: clearFieldFilter — also reset status filter and dropdown ──
 function clearFieldFilter(){
   currentFieldFilter  = null;
   currentStatusFilter = null;
@@ -929,7 +913,7 @@ function downloadFieldSummaryCSV(){
   URL.revokeObjectURL(url);
 }
 
-/* ── DOWNLOAD ── */
+/* ── DOWNLOAD CSV ── */
 async function downloadCSV(){
   if(!currentJobId){alert("No results to download");return;}
   try{
@@ -939,6 +923,190 @@ async function downloadCSV(){
     const a=document.createElement("a");a.href=url;a.download=`etl_results_${currentJobId.slice(0,8)}.csv`;a.click();
     URL.revokeObjectURL(url);
   }catch(err){alert("Download failed: "+err.message);}
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HTML REPORT EXPORTER
+   ═══════════════════════════════════════════════════════════ */
+async function exportHTMLReport(jobId, apiBase) {
+  if (!jobId) { alert("No job selected for export."); return; }
+  const btn = $('exportHtmlBtn');
+  if (btn) { btn.disabled = true; btn.innerText = "⏳ Preparing…"; }
+  try {
+    const metaRes = await fetch(`${apiBase}/db/share/${jobId}`);
+    if (!metaRes.ok) throw new Error("Could not load job metadata.");
+    const meta = await metaRes.json();
+
+    let fieldSummary = [];
+    try {
+      const fsRes = await fetch(`${apiBase}/db/field-summary/${jobId}`);
+      if (fsRes.ok) { const fd = await fsRes.json(); fieldSummary = fd.summary || []; }
+    } catch(e) {}
+
+    let allResults = [], page = 1, totalPgs = 999;
+    while (page <= totalPgs) {
+      const r = await fetch(`${apiBase}/db/results/${jobId}?page=${page}&pageSize=1000`);
+      if (!r.ok) break;
+      const d = await r.json();
+      allResults = allResults.concat(d.results || []);
+      totalPgs = d.totalPages || 1;
+      page++;
+      if (btn) btn.innerText = `⏳ Loading… ${allResults.length.toLocaleString()} rows`;
+    }
+
+    const html = buildReportHTML(meta, fieldSummary, allResults);
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    const safeDate = (meta.date || "").slice(0, 10).replace(/-/g, "");
+    const safeCase = (meta.testCase || "report").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30);
+    a.href = url; a.download = `ETL_Report_${safeCase}_${safeDate}.html`; a.click();
+    URL.revokeObjectURL(url);
+    showToast("✓ HTML report downloaded!");
+  } catch(e) {
+    alert("Export failed: " + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerText = "⬇ Export HTML Report"; }
+  }
+}
+
+function buildReportHTML(meta, fieldSummary, allResults) {
+  const fa  = meta.fieldAccuracy ?? meta.accuracy ?? 0;
+  const kmr = meta.keyMatchRate  ?? 0;
+  const faColor  = fa  >= 90 ? "#4ade80" : fa  >= 70 ? "#f59e0b" : "#f87171";
+  const kmrColor = kmr >= 90 ? "#4ade80" : kmr >= 70 ? "#f59e0b" : "#f87171";
+  const escR = v => { if (v == null) return ""; const d = document.createElement("div"); d.textContent = String(v); return d.innerHTML; };
+  const totalMismatches = fieldSummary.reduce((s,f) => s + f.mismatched + f.null_mismatch, 0);
+  const fsRows = fieldSummary.map(f => {
+    const bc = f.accuracy===100?"#4ade8022;color:#4ade80":f.accuracy>=70?"#f59e0b22;color:#f59e0b":"#f8717122;color:#f87171";
+    const pct = totalMismatches>0?((f.mismatched+f.null_mismatch)/totalMismatches*100).toFixed(1):"0.0";
+    const bar = `<div style="display:inline-block;background:#1e2d45;border-radius:3px;height:6px;width:60px;overflow:hidden;vertical-align:middle;margin-right:6px"><div style="height:100%;width:${f.accuracy}%;background:${f.accuracy===100?"#4ade80":f.accuracy>=70?"#f59e0b":"#ef4444"}"></div></div>`;
+    return `<tr><td style="color:#e8f0fe">${escR(f.field)}</td><td style="color:${f.mismatched>0?"#f87171":"#4b6280"}">${f.mismatched.toLocaleString()}${f.mismatched>0?`<span style="font-size:10px;color:#4b6280;margin-left:4px">${pct}%</span>`:""}</td><td style="color:${f.null_mismatch>0?"#fb923c":"#4b6280"}">${f.null_mismatch.toLocaleString()}</td><td style="color:#4ade80">${f.matched.toLocaleString()}</td><td style="color:#7a8fa8">${f.total.toLocaleString()}</td><td>${bar}<span style="background:${bc};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">${f.accuracy}%</span></td></tr>`;
+  }).join("");
+  const STATUS_COLORS = {MATCHED:"#4ade80",MISMATCH:"#f87171",NULL_MISMATCH:"#fb923c",SOURCE_ONLY:"#a78bfa",TARGET_ONLY:"#c084fc",SOURCE_DUPLICATE:"#facc15",TARGET_DUPLICATE:"#fbbf24"};
+  const resultRows = allResults.map(r => {
+    const c = STATUS_COLORS[r.status]||"#e8f0fe";
+    const rowBg = r.status==="MATCHED"?"#0d2318":r.status==="MISMATCH"?"#2a0f0f":r.status==="NULL_MISMATCH"?"#2a1a00":"#1a1a2e";
+    return `<tr style="background:${rowBg}"><td style="font-size:11px;word-break:break-all">${escR(r.key)}</td><td>${escR(r.field)}</td><td style="word-break:break-all">${escR(r.source)}</td><td style="word-break:break-all">${escR(r.target)}</td><td><span style="background:${c}22;color:${c};padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold;display:inline-block">${escR(r.status)}</span></td></tr>`;
+  }).join("");
+  const generatedAt = new Date().toLocaleString();
+  const fsSection = fieldSummary.length ? `
+  <div class="section">
+    <div class="collapsible-header" onclick="toggleSection('fs')"><h3>📊 Mismatch Field Summary <span style="color:#7a8fa8;font-weight:normal;font-size:12px">— ${fieldSummary.length} fields</span></h3><span class="chevron">▼</span></div>
+    <div class="collapsible-body" id="fs-body">
+      <div class="filter-bar"><input id="fs-search" placeholder="🔍 Filter fields…" oninput="filterFs()"><select id="fs-filter" onchange="filterFs()"><option value="all">All Fields</option><option value="mismatch">Has Mismatches</option><option value="perfect">Perfect (100%)</option><option value="failing">Failing (&lt;70%)</option></select><span class="count-badge" id="fs-count">${fieldSummary.length} fields</span></div>
+      <div class="table-wrap"><table><thead><tr><th onclick="sortFsCol('field')" style="cursor:pointer">Field ↕</th><th onclick="sortFsCol('mismatched')" style="cursor:pointer;color:#00d4ff">Mismatches ↓</th><th onclick="sortFsCol('null_mismatch')" style="cursor:pointer">Null Mismatches ↕</th><th onclick="sortFsCol('matched')" style="cursor:pointer">Matched ↕</th><th onclick="sortFsCol('total')" style="cursor:pointer">Total ↕</th><th onclick="sortFsCol('accuracy')" style="cursor:pointer">Accuracy ↕</th></tr></thead><tbody id="fs-tbody">${fsRows}</tbody></table></div>
+      <div style="padding:8px 0;font-size:11px;color:#4b6280" id="fs-footer">Showing ${fieldSummary.length} fields · ${totalMismatches.toLocaleString()} total mismatches</div>
+    </div>
+  </div>` : "";
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>ETL Report — ${escR(meta.testCase||"N/A")}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0e17;color:#e8f0fe;font-family:'Segoe UI',Arial,sans-serif;min-height:100vh;padding-bottom:60px}
+.report-header{background:#0d1220;border-bottom:2px solid #00d4ff;padding:20px 32px;display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.report-header h1{font-size:22px;font-weight:700;letter-spacing:.5px;margin-bottom:4px}
+.report-header .sub{font-size:12px;color:#7a8fa8}
+.badge{background:#00d4ff;color:#0a0e17;padding:3px 10px;border-radius:3px;font-size:11px;font-weight:bold}
+.COMPLETED{background:#15382166;color:#4ade80;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}
+.FAILED{background:#4c1d1d66;color:#f87171;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}
+.CANCELLED{background:#2d1f0066;color:#fb923c;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}
+.body{max-width:1400px;margin:0 auto;padding:28px 32px}
+.section{margin-bottom:32px}
+.section-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#4b6280;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #1e2d45}
+.metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}
+.metric-card{background:#111827;border:1px solid #1e2d45;border-radius:8px;padding:16px}
+.metric-card .val{font-size:30px;font-weight:800;line-height:1}
+.metric-card .lbl{font-size:11px;color:#7a8fa8;margin-top:6px}
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#111827;border-radius:4px;font-size:12px}
+.stat-row .s-label{color:#7a8fa8}.stat-row .s-val{font-weight:700}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#111827;color:#7a8fa8;padding:9px 12px;text-align:left;border-bottom:1px solid #1e2d45;white-space:nowrap;position:sticky;top:0;z-index:2}
+td{padding:8px 12px;border-bottom:1px solid #111827}
+.table-wrap{border:1px solid #1e2d45;border-radius:6px;overflow:hidden}
+.results-wrap{max-height:520px;overflow-y:auto;border:1px solid #1e2d45;border-radius:6px}
+.filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.filter-bar input,.filter-bar select{background:#111827;border:1px solid #2a3f5f;color:#fff;padding:6px 10px;border-radius:4px;font-size:12px}
+.filter-bar input{width:220px}
+.count-badge{background:#1e2d45;padding:4px 12px;border-radius:4px;font-size:11px;color:#7a8fa8}
+.export-note{background:#0d2040;border:1px solid #1e2d45;border-radius:6px;padding:12px 16px;font-size:11px;color:#7a8fa8;margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.footer{text-align:center;padding:32px;color:#3a4f6a;font-size:11px;border-top:1px solid #1a2638;margin-top:40px}
+.collapsible-header{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:12px 16px;background:#111827;border-radius:6px 6px 0 0;user-select:none}
+.collapsible-header:hover{background:#141e30}
+.collapsible-header h3{font-size:13px;margin:0}
+.collapsible-header .chevron{color:#00d4ff;font-size:15px;transition:transform .2s}
+.collapsible-header.collapsed .chevron{transform:rotate(-90deg)}
+.collapsible-body{padding:16px;background:#0d1a2e;border:1px solid #1e2d45;border-top:none;border-radius:0 0 6px 6px}
+.collapsible-body.hidden{display:none}
+.csv-btn{background:#1e2d45;color:#e8f0fe;border:none;padding:6px 14px;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold}
+.csv-btn:hover{background:#2a3f5f}
+@media(max-width:700px){.metrics-grid{grid-template-columns:1fr 1fr}.stats-grid{grid-template-columns:1fr}}
+</style></head><body>
+<div class="report-header">
+  <div><h1>📋 ETL Comparison Report</h1><div class="sub">${escR(meta.testCase||"N/A")} &nbsp;·&nbsp; ${new Date(meta.date).toLocaleString()} &nbsp;·&nbsp; Job: <code style="font-size:11px">${escR(meta.jobId)}</code></div></div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="${meta.status}">${escR(meta.status)}</span><span class="badge">v9.1</span><button class="csv-btn" onclick="downloadCSV()">⬇ Export CSV</button></div>
+</div>
+<div class="body">
+  <div class="export-note">📄 <span>Self-contained offline report &nbsp;·&nbsp; Generated ${generatedAt} &nbsp;·&nbsp; ${allResults.length.toLocaleString()} total rows embedded</span></div>
+  <div class="metrics-grid">
+    <div class="metric-card"><div class="val" style="color:${faColor}">${fa}%</div><div class="lbl">Field Accuracy</div></div>
+    <div class="metric-card"><div class="val" style="color:${kmrColor}">${kmr}%</div><div class="lbl">Key Match Rate</div></div>
+    <div class="metric-card"><div class="val" style="color:#60a5fa">${(meta.totalRecords||0).toLocaleString()}</div><div class="lbl">Total Comparisons</div></div>
+    <div class="metric-card"><div class="val" style="color:#f87171">${(meta.mismatched||0).toLocaleString()}</div><div class="lbl">Mismatched Fields</div></div>
+  </div>
+  <div class="section"><div class="section-title">Execution Statistics</div><div class="stats-grid">
+    <div class="stat-row"><span class="s-label">Matched Fields</span><span class="s-val" style="color:#4ade80">${(meta.matched||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Null Mismatches</span><span class="s-val" style="color:#fb923c">${(meta.nullMismatches||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Source-Only Keys</span><span class="s-val" style="color:#fb923c">${(meta.keysSrcOnly||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Target-Only Keys</span><span class="s-val" style="color:#a78bfa">${(meta.keysTgtOnly||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Keys in Both</span><span class="s-val" style="color:#60a5fa">${(meta.keysInBoth||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Source Duplicates</span><span class="s-val">${(meta.sourceDuplicates||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Target Duplicates</span><span class="s-val">${(meta.targetDuplicates||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Source Row Count</span><span class="s-val">${(meta.srcRowCount||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Target Row Count</span><span class="s-val">${(meta.tgtRowCount||0).toLocaleString()}</span></div>
+  </div></div>
+  ${fsSection}
+  <div class="section">
+    <div class="collapsible-header" onclick="toggleSection('results')"><h3>🔍 Comparison Results <span style="color:#7a8fa8;font-weight:normal;font-size:12px">— ${allResults.length.toLocaleString()} rows</span></h3><span class="chevron">▼</span></div>
+    <div class="collapsible-body" id="results-body">
+      <div class="filter-bar"><input id="r-search" placeholder="🔍 Search key or field…" oninput="filterResults()"><select id="r-status" onchange="filterResults()"><option value="">All Status</option><option value="MATCHED">Matched</option><option value="MISMATCH">Mismatch</option><option value="NULL_MISMATCH">Null Mismatch</option><option value="SOURCE_ONLY">Source Only</option><option value="TARGET_ONLY">Target Only</option><option value="SOURCE_DUPLICATE">Source Duplicate</option><option value="TARGET_DUPLICATE">Target Duplicate</option></select><span class="count-badge" id="r-count">${allResults.length.toLocaleString()} rows</span></div>
+      <div class="results-wrap"><table><thead><tr><th style="width:25%">Key</th><th style="width:12%">Field</th><th style="width:24%">Source</th><th style="width:24%">Target</th><th style="width:15%">Status</th></tr></thead><tbody id="r-tbody">${resultRows}</tbody></table></div>
+      <div style="padding:8px 0;font-size:11px;color:#4b6280" id="r-footer">Showing all ${allResults.length.toLocaleString()} rows</div>
+    </div>
+  </div>
+</div>
+<div class="footer">ETL Automation Tool v9.1 &nbsp;·&nbsp; Report generated ${generatedAt}<br>Self-contained offline snapshot. Data reflects the state at time of export.</div>
+<script>
+const ALL_RESULTS=${JSON.stringify(allResults)};
+const FIELD_SUMMARY=${JSON.stringify(fieldSummary)};
+function toggleSection(id){const b=document.getElementById(id+'-body');b.previousElementSibling.classList.toggle('collapsed');b.classList.toggle('hidden');}
+let fsSortCol='mismatched',fsSortAsc=false;
+function filterFs(){
+  const q=(document.getElementById('fs-search')?.value||'').toLowerCase();
+  const fv=document.getElementById('fs-filter')?.value||'all';
+  let data=FIELD_SUMMARY.filter(f=>{if(q&&!f.field.toLowerCase().includes(q))return false;if(fv==='mismatch'&&f.mismatched===0&&f.null_mismatch===0)return false;if(fv==='perfect'&&f.accuracy<100)return false;if(fv==='failing'&&f.accuracy>=70)return false;return true;});
+  data.sort((a,b)=>{let av=a[fsSortCol],bv=b[fsSortCol];if(typeof av==='string'){av=av.toLowerCase();bv=bv.toLowerCase();}return fsSortAsc?(av>bv?1:-1):(av<bv?1:-1);});
+  const totalMm=data.reduce((s,f)=>s+f.mismatched+f.null_mismatch,0);
+  document.getElementById('fs-tbody').innerHTML=data.map(f=>{const bc=f.accuracy===100?'#4ade8022;color:#4ade80':f.accuracy>=70?'#f59e0b22;color:#f59e0b':'#f8717122;color:#f87171';const pct=totalMm>0?((f.mismatched+f.null_mismatch)/totalMm*100).toFixed(1):'0.0';const bar='<div style="display:inline-block;background:#1e2d45;border-radius:3px;height:6px;width:60px;overflow:hidden;vertical-align:middle;margin-right:6px"><div style="height:100%;width:'+f.accuracy+'%;background:'+(f.accuracy===100?'#4ade80':f.accuracy>=70?'#f59e0b':'#ef4444')+'"></div></div>';return '<tr><td style="color:#e8f0fe">'+f.field+'</td><td style="color:'+(f.mismatched>0?'#f87171':'#4b6280')+'">'+f.mismatched.toLocaleString()+(f.mismatched>0?'<span style="font-size:10px;color:#4b6280;margin-left:4px">'+pct+'%</span>':'')+'</td><td style="color:'+(f.null_mismatch>0?'#fb923c':'#4b6280')+'">'+f.null_mismatch.toLocaleString()+'</td><td style="color:#4ade80">'+f.matched.toLocaleString()+'</td><td style="color:#7a8fa8">'+f.total.toLocaleString()+'</td><td>'+bar+'<span style="background:'+bc+';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">'+f.accuracy+'%</span></td></tr>';}).join('');
+  document.getElementById('fs-count').innerText=data.length+' fields';
+  document.getElementById('fs-footer').innerText='Showing '+data.length+' of '+FIELD_SUMMARY.length+' fields \xb7 '+totalMm.toLocaleString()+' total mismatches';
+}
+function sortFsCol(col){fsSortAsc=fsSortCol===col?!fsSortAsc:col==='field';fsSortCol=col;filterFs();}
+const SC={MATCHED:'#4ade80',MISMATCH:'#f87171',NULL_MISMATCH:'#fb923c',SOURCE_ONLY:'#a78bfa',TARGET_ONLY:'#c084fc',SOURCE_DUPLICATE:'#facc15',TARGET_DUPLICATE:'#fbbf24'};
+function filterResults(){
+  const q=(document.getElementById('r-search').value||'').toLowerCase();
+  const st=document.getElementById('r-status').value;
+  const data=ALL_RESULTS.filter(r=>(!st||r.status===st)&&(!q||r.key?.toLowerCase().includes(q)||r.field?.toLowerCase().includes(q)));
+  const rb=r=>r.status==='MATCHED'?'#0d2318':r.status==='MISMATCH'?'#2a0f0f':r.status==='NULL_MISMATCH'?'#2a1a00':'#1a1a2e';
+  const pill=r=>{const c=SC[r.status]||'#e8f0fe';return 'background:'+c+'22;color:'+c+';padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold;display:inline-block';};
+  function e(v){if(v==null)return'';const d=document.createElement('div');d.textContent=String(v);return d.innerHTML;}
+  document.getElementById('r-tbody').innerHTML=data.map(r=>'<tr style="background:'+rb(r)+'"><td style="font-size:11px;word-break:break-all">'+e(r.key)+'</td><td>'+e(r.field)+'</td><td style="word-break:break-all">'+e(r.source)+'</td><td style="word-break:break-all">'+e(r.target)+'</td><td><span style="'+pill(r)+'">'+e(r.status)+'</span></td></tr>').join('');
+  document.getElementById('r-count').innerText=data.length.toLocaleString()+' rows';
+  document.getElementById('r-footer').innerText='Showing '+data.length.toLocaleString()+' of '+ALL_RESULTS.length.toLocaleString()+' rows';
+}
+function downloadCSV(){const h='key,field,source,target,status\\n';const r=ALL_RESULTS.map(r=>[r.key,r.field,r.source,r.target,r.status].map(v=>'"'+(v||'').replace(/"/g,'""')+'"').join(',')).join('\\n');const b=new Blob([h+r],{type:'text/csv'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='etl_results_export.csv';a.click();URL.revokeObjectURL(u);}
+<\/script></body></html>`;
 }
 
 /* ── INIT ── */
