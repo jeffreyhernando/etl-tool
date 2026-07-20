@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>ETL History Viewer</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0e17;color:#e8f0fe;font-family:Arial,sans-serif;min-height:100vh}
+
+/* ── HEADER ── */
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 24px;border-bottom:1px solid #1e2d45;
+  background:#0d1220;
+}
+header h1{font-size:18px;font-weight:bold;letter-spacing:.5px}
+.badge{background:#00d4ff;color:#0a0e17;padding:3px 10px;border-radius:3px;font-size:11px;font-weight:bold}
+.server-status{font-size:12px;display:flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:#555}
+.dot.online{background:#00d4ff;box-shadow:0 0 6px #00d4ff}
+.dot.offline{background:#ff4444}
+
+/* ── TOOLBAR ── */
+.toolbar{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:14px 24px;background:#0d1220;border-bottom:1px solid #1e2d45;
+}
+.toolbar input,.toolbar select{
+  background:#1e2d45;border:1px solid #2a3f5f;color:#fff;
+  padding:7px 10px;border-radius:4px;font-size:13px;
+}
+.toolbar input{width:220px}
+.toolbar select{width:160px}
+button{
+  padding:7px 16px;background:#00d4ff;border:none;color:#0a0e17;
+  font-weight:bold;cursor:pointer;border-radius:4px;font-size:13px;
+}
+button:hover{background:#00b8e6}
+.btn-sec{background:#1e2d45;color:#e8f0fe}
+.btn-sec:hover{background:#2a3f5f}
+.btn-danger{background:#7c1d1d;color:#ffaaaa}
+.btn-danger:hover{background:#9c2d2d}
+.btn-share{background:#0d2040 !important;color:#00d4ff !important;border:1px solid #00d4ff !important;font-weight:bold}
+.btn-share:hover{background:#00d4ff !important;color:#0a0e17 !important}
+.btn-export{background:#1a2c1a !important;color:#4ade80 !important;border:1px solid #2a4a2a !important;font-weight:bold}
+.btn-export:hover{background:#4ade80 !important;color:#0a0e17 !important}
+
+/* ── SHARED JOB BANNER ── */
+.shared-banner{
+  display:none;
+  background:#0d2040;border-bottom:2px solid #00d4ff;
+  padding:10px 24px;font-size:13px;align-items:center;gap:12px;
+}
+.shared-banner.show{display:flex}
+.shared-banner strong{color:#00d4ff}
+.shared-banner .close-banner{
+  margin-left:auto;background:transparent;border:1px solid #2a3f5f;
+  color:#7a8fa8;padding:4px 10px;font-size:11px;font-weight:normal;
+}
+.shared-banner .close-banner:hover{color:#fff;border-color:#fff}
+
+/* ── HISTORY TABLE ── */
+.table-wrap{overflow-x:auto;padding:16px 24px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 12px;font-size:12px;border-bottom:1px solid #1a2638;text-align:left;white-space:nowrap}
+th{background:#111827;color:#7a8fa8;font-weight:600;position:sticky;top:0;z-index:5}
+tr:hover td{background:#131d2e}
+.status-pill{
+  display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:bold;
+}
+.COMPLETED{background:#153821;color:#4ade80}
+.FAILED{background:#4c1d1d;color:#f87171}
+.RUNNING{background:#1a2c4a;color:#60a5fa}
+.CANCELLED{background:#2d1f00;color:#fb923c}
+.accuracy-bar{display:flex;align-items:center;gap:8px}
+.bar-bg{background:#1e2d45;border-radius:4px;height:8px;width:80px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;background:#00d4ff;transition:width .3s}
+.bar-fill.warn{background:#f59e0b}
+.bar-fill.bad{background:#ef4444}
+
+/* ── DETAIL PANEL (FULL PAGE MODAL) ── */
+.detail-panel{
+  position:fixed;top:0;left:0;width:100%;height:100vh;
+  background:#0a0e17;z-index:100;overflow-y:auto;
+  display:none;
+}
+.detail-panel.open{display:block}
+.detail-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 24px;border-bottom:1px solid #1e2d45;
+  background:#0d1220;position:sticky;top:0;z-index:10;
+}
+.detail-header h2{font-size:18px;margin:0;flex:1}
+.detail-header-buttons{display:flex;gap:8px}
+.close-btn{background:#1e2d45;color:#fff;border:none;cursor:pointer;
+  padding:8px 16px;border-radius:4px;font-size:13px}
+.close-btn:hover{background:#2a3f5f}
+.detail-body{padding:24px;max-width:1400px;margin:0 auto}
+
+/* metrics grid */
+.metrics-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
+.metric-box{background:#1e2d45;border-radius:6px;padding:14px}
+.metric-box .m-val{font-size:28px;font-weight:bold;color:#00d4ff}
+.metric-box .m-lbl{font-size:11px;color:#7a8fa8;margin-top:2px}
+.metric-box.key-rate .m-val{color:#a78bfa}
+.metric-box.field-acc .m-val{color:#34d399}
+.metric-box.warn .m-val{color:#f59e0b}
+
+/* summary rows */
+.summary-rows{margin-bottom:20px}
+.summary-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:8px 0;border-bottom:1px solid #1a2638;font-size:13px;
+}
+.summary-row .s-label{color:#7a8fa8}
+.summary-row .s-val{font-weight:bold}
+
+/* ── FIELD SUMMARY (inside detail panel) ── */
+.field-summary-box{
+  background:#0d1a2e;border:1px solid #1e2d45;border-radius:6px;
+  margin-bottom:20px;overflow:hidden;
+}
+.field-summary-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;background:#111827;cursor:pointer;user-select:none;
+}
+.field-summary-header h3{font-size:13px;color:#e8f0fe;margin:0}
+.field-summary-header .toggle-icon{color:#00d4ff;font-size:16px;transition:transform .2s}
+.field-summary-header.collapsed .toggle-icon{transform:rotate(-90deg)}
+.field-summary-body{padding:12px 16px}
+.field-summary-body.hidden{display:none}
+
+.field-summary-controls{
+  display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;
+}
+.field-summary-search{
+  background:#1e2d45;border:1px solid #2a3f5f;color:#fff;
+  padding:6px 10px;border-radius:4px;font-size:12px;width:220px;
+}
+.field-summary-filter-sel{
+  background:#1e2d45;border:1px solid #2a3f5f;color:#fff;
+  padding:5px 8px;border-radius:4px;font-size:12px;width:auto;
+}
+
+.fs-table{width:100%;border-collapse:collapse;font-size:12px}
+.fs-table th{
+  background:#1a2638;color:#7a8fa8;padding:8px 10px;
+  text-align:left;border-bottom:1px solid #1e2d45;
+  cursor:pointer;white-space:nowrap;
+}
+.fs-table th:hover{color:#00d4ff}
+.fs-table th.sorted{color:#00d4ff}
+.fs-table td{padding:8px 10px;border-bottom:1px solid #111827}
+.fs-table tr:hover td{background:#131d2e;cursor:pointer}
+
+.accuracy-cell{display:flex;align-items:center;gap:8px}
+.mini-bar-bg{background:#1e2d45;border-radius:3px;height:6px;width:70px;overflow:hidden;flex-shrink:0}
+.mini-bar-fill{height:100%;border-radius:3px;transition:width .3s}
+.mismatch-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold}
+.badge-ok{background:#153821;color:#4ade80}
+.badge-warn{background:#2d1f00;color:#fb923c}
+.badge-bad{background:#4c1d1d;color:#f87171}
+.clickable-field{color:#00d4ff;text-decoration:underline;cursor:pointer}
+.clickable-field:hover{color:#fff}
+
+.fs-footer{
+  padding:8px 16px;background:#0a1120;font-size:11px;color:#4b6280;
+  border-top:1px solid #1e2d45;display:flex;justify-content:space-between;align-items:center;
+}
+
+/* field filter indicator */
+.field-filter-bar{
+  display:none;align-items:center;gap:10px;
+  background:#1a2c1a;border:1px solid #2a4a2a;border-radius:4px;
+  padding:7px 12px;margin-bottom:10px;font-size:12px;
+}
+.field-filter-bar.show{display:flex}
+
+/* results inside panel */
+.panel-pagination{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  margin-bottom:12px;
+}
+.panel-pagination button{padding:5px 10px;font-size:12px}
+.panel-pagination select{
+  background:#1e2d45;border:1px solid #2a3f5f;color:#fff;
+  padding:5px 8px;border-radius:4px;font-size:12px;
+}
+.panel-pagination .page-info{color:#00d4ff;font-size:12px;font-weight:bold}
+.results-table-wrap{overflow-x:auto;max-height:380px;border:1px solid #1e2d45;border-radius:4px}
+.results-table-wrap table th{background:#141e30}
+tr.good td{background:#0d2318}
+tr.bad  td{background:#2a0f0f}
+
+/* share URL box */
+.share-url-box{
+  display:flex;align-items:center;gap:8px;
+  background:#111827;border:1px solid #1e2d45;border-radius:6px;
+  padding:10px 14px;margin-bottom:20px;
+}
+.share-url-box input{
+  flex:1;background:transparent;border:none;color:#00d4ff;
+  font-size:12px;font-family:monospace;outline:none;cursor:text;
+}
+.share-url-box .copy-btn{
+  padding:5px 14px;font-size:12px;white-space:nowrap;flex-shrink:0;
+}
+
+/* section heading */
+.section-heading{
+  font-size:13px;color:#7a8fa8;text-transform:uppercase;
+  letter-spacing:.06em;margin:0 0 10px;
+}
+
+/* empty state */
+.empty-state{text-align:center;padding:60px 20px;color:#3a4f6a}
+.empty-state p{font-size:14px}
+
+/* loading */
+.loading{text-align:center;padding:40px;color:#7a8fa8;font-size:14px}
+
+/* ── TOAST ── */
+.toast{
+  position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:#00d4ff;color:#0a0e17;padding:10px 22px;border-radius:6px;
+  font-size:13px;font-weight:bold;opacity:0;pointer-events:none;
+  transition:opacity .25s,transform .25s;z-index:9999;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📋 ETL TEST EXECUTION HISTORY</h1>
+  <div style="display:flex;align-items:center;gap:16px">
+    <div class="server-status">
+      <div class="dot" id="serverDot"></div>
+      <span id="serverLabel">Connecting…</span>
+    </div>
+    <span class="badge">v9.1</span>
+  </div>
+</header>
+
+<!-- Shared-link banner -->
+<div class="shared-banner" id="sharedBanner">
+  <span>🔗 <strong>Shared link</strong> — viewing a specific execution. <span id="sharedBannerLabel"></span></span>
+  <button class="close-banner" onclick="clearSharedMode()">✕ Show All</button>
+</div>
+
+<div class="toolbar">
+  <input id="searchBox" placeholder="🔍  Search test case or job ID…" oninput="filterTable()">
+  <select id="statusFilter" onchange="filterTable()">
+    <option value="">All Statuses</option>
+    <option value="COMPLETED">Completed</option>
+    <option value="FAILED">Failed</option>
+    <option value="CANCELLED">Cancelled</option>
+    <option value="RUNNING">Running</option>
+  </select>
+  <select id="sortBy" onchange="filterTable()">
+    <option value="date_desc">Newest First</option>
+    <option value="date_asc">Oldest First</option>
+    <option value="accuracy_desc">Highest Accuracy</option>
+    <option value="accuracy_asc">Lowest Accuracy</option>
+    <option value="records_desc">Most Records</option>
+  </select>
+  <button onclick="loadHistory()">⟳ Refresh</button>
+  <button class="btn-sec" onclick="window.location.href='index.html'">← Back to Tool</button>
+</div>
+
+<div class="table-wrap">
+  <div id="tableContent"><div class="loading">Loading history…</div></div>
+</div>
+
+<!-- ══════════════════ DETAIL PANEL ══════════════════ -->
+<div class="detail-panel" id="detailPanel">
+  <div class="detail-header">
+    <h2 id="detailTitle">Execution Detail</h2>
+    <div style="display:flex;gap:8px">
+      <button onclick="downloadFromPanel()" class="btn-sec" id="dlBtn">⬇ CSV</button>
+      <button onclick="exportFromPanel()" class="btn-export" id="exportHtmlBtnPanel">⬇ Export HTML Report</button>
+      <button class="close-btn" onclick="closeDetail()">✕ Close</button>
+    </div>
+  </div>
+  <div class="detail-body" id="detailBody"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "http://127.0.0.1:8000";
+let allHistory  = [];
+let activeJobId = null;
+let panelPage   = 1;
+let panelPageSize = 100;
+let panelTotalPages = 1;
+let panelStatusFilter = null;
+let panelFieldFilter  = null;
+
+// ── Field Summary state (per open detail) ──
+let fsData      = [];
+let fsSortCol   = "mismatched";
+let fsSortAsc   = false;
+
+// ── TOAST ──────────────────────────────────────────────────────────────
+function showToast(msg, duration = 2200) {
+  const t = document.getElementById("toast");
+  t.innerText = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), duration);
+}
+
+// ── SHARE LINK ─────────────────────────────────────────────────────────
+function buildShareUrl(jobId) {
+  return window.location.href.split("?")[0] + "?job=" + jobId;
+}
+function copyShareLink(jobId) {
+  const id = jobId || activeJobId;
+  if (!id) return;
+  const url = buildShareUrl(id);
+  navigator.clipboard.writeText(url)
+    .then(() => showToast("✓ Share link copied to clipboard!"))
+    .catch(() => prompt("Copy this link:", url));
+}
+
+// ── SERVER PING ────────────────────────────────────────────────────────
+async function pingServer(){
+  try{
+    await fetch(API+"/health", {signal: AbortSignal.timeout(3000)});
+    document.getElementById("serverDot").className   = "dot online";
+    document.getElementById("serverLabel").innerText = "Server online";
+  } catch {
+    document.getElementById("serverDot").className   = "dot offline";
+    document.getElementById("serverLabel").innerText = "Server offline";
+  }
+}
+pingServer();
+setInterval(pingServer, 10000);
+
+// ── URL param helpers ──────────────────────────────────────────────────
+function getJobFromUrl() {
+  return new URLSearchParams(window.location.search).get("job");
+}
+function setSharedMode(jobId) {
+  document.getElementById("sharedBannerLabel").innerText = `Job ID: ${jobId.slice(0,8)}…`;
+  document.getElementById("sharedBanner").classList.add("show");
+  history.replaceState(null, "", "?job="+jobId);
+}
+function clearSharedMode() {
+  document.getElementById("sharedBanner").classList.remove("show");
+  history.replaceState(null, "", window.location.pathname);
+}
+
+// ── LOAD HISTORY ───────────────────────────────────────────────────────
+async function loadHistory(isAutoRefresh = false){
+  const panelOpen = document.getElementById("detailPanel").classList.contains("open");
+  if (!isAutoRefresh) {
+    document.getElementById("tableContent").innerHTML = '<div class="loading">Loading…</div>';
+  }
+  try{
+    const res = await fetch(API+"/db/history");
+    allHistory = await res.json();
+    filterTable();
+    if (!isAutoRefresh) {
+      const linkedJobId = getJobFromUrl();
+      if (linkedJobId) {
+        setSharedMode(linkedJobId);
+        const found = allHistory.find(h => h.jobId === linkedJobId);
+        if (found) openDetail(linkedJobId);
+        else openDetailFromShare(linkedJobId);
+      }
+    }
+  } catch(e) {
+    if (!isAutoRefresh) {
+      document.getElementById("tableContent").innerHTML =
+        `<div class="empty-state"><p style="color:#f87171">Failed to load: ${e.message}<br>Is the server running at ${API}?</p></div>`;
+    }
+  }
+}
+
+// ── FILTER + SORT ──────────────────────────────────────────────────────
+function filterTable(){
+  const q      = document.getElementById("searchBox").value.toLowerCase();
+  const st     = document.getElementById("statusFilter").value;
+  const sortBy = document.getElementById("sortBy").value;
+  let data = allHistory.filter(h=>{
+    return (!q || h.testCase?.toLowerCase().includes(q) || h.jobId?.toLowerCase().includes(q))
+        && (!st || h.status === st);
+  });
+  data.sort((a,b)=>{
+    if(sortBy==="date_asc")      return new Date(a.date)-new Date(b.date);
+    if(sortBy==="accuracy_desc") return (b.fieldAccuracy||b.accuracy||0)-(a.fieldAccuracy||a.accuracy||0);
+    if(sortBy==="accuracy_asc")  return (a.fieldAccuracy||a.accuracy||0)-(b.fieldAccuracy||b.accuracy||0);
+    if(sortBy==="records_desc")  return (b.totalRecords||0)-(a.totalRecords||0);
+    return new Date(b.date)-new Date(a.date);
+  });
+  renderTable(data);
+}
+
+// ── RENDER TABLE ───────────────────────────────────────────────────────
+function renderTable(data){
+  if(!data.length){
+    document.getElementById("tableContent").innerHTML =
+      `<div class="empty-state"><p>No executions found.<br>Run a comparison in the ETL Tool to see results here.</p></div>`;
+    return;
+  }
+  const rows = data.map(h=>{
+    const fa  = h.fieldAccuracy ?? h.accuracy ?? 0;
+    const kmr = h.keyMatchRate  ?? 0;
+    const faClass = fa>=90?"":fa>=70?"warn":"bad";
+    return `
+      <tr onclick="openDetail('${h.jobId}')" style="cursor:pointer">
+        <td>${esc(h.testCase||"–")}</td>
+        <td style="font-family:monospace;color:#7a8fa8">${h.jobId.slice(0,8)}…</td>
+        <td>${new Date(h.date).toLocaleString()}</td>
+        <td><span class="status-pill ${h.status}">${h.status}</span></td>
+        <td><div class="accuracy-bar"><div class="bar-bg"><div class="bar-fill ${faClass}" style="width:${fa}%"></div></div><span>${fa}%</span></div></td>
+        <td><div class="accuracy-bar"><div class="bar-bg"><div class="bar-fill" style="width:${kmr}%;background:#a78bfa"></div></div><span>${kmr}%</span></div></td>
+        <td>${(h.totalRecords||0).toLocaleString()}</td>
+        <td>${(h.srcRowCount||0).toLocaleString()}</td>
+        <td>${(h.tgtRowCount||0).toLocaleString()}</td>
+        <td onclick="event.stopPropagation()">
+          <button onclick="openDetail('${h.jobId}')" style="padding:4px 10px;font-size:11px">View</button>
+          <button onclick="copyShareLink('${h.jobId}')" class="btn-share" style="padding:4px 10px;font-size:11px">🔗 Share</button>
+          <button onclick="downloadJob('${h.jobId}')" class="btn-sec" style="padding:4px 10px;font-size:11px">CSV</button>
+          <button onclick="triggerExport('${h.jobId}')" class="btn-export" style="padding:4px 10px;font-size:11px">⬇ HTML</button>
+        </td>
+      </tr>`;
+  }).join("");
+  document.getElementById("tableContent").innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Test Case</th><th>Job ID</th><th>Date</th><th>Status</th>
+        <th>Field Accuracy</th><th>Key Match Rate</th>
+        <th>Total Rows</th><th>Src Rows</th><th>Tgt Rows</th><th>Actions</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── OPEN DETAIL ────────────────────────────────────────────────────────
+async function openDetail(jobId){
+  const h = allHistory.find(x=>x.jobId===jobId);
+  if(!h) return openDetailFromShare(jobId);
+  _openDetailWithData(h);
+}
+
+async function openDetailFromShare(jobId){
+  activeJobId = jobId;
+  panelPage = 1; panelStatusFilter = null; panelFieldFilter = null;
+  document.getElementById("detailPanel").classList.add("open");
+  document.getElementById("detailBody").innerHTML = '<div class="loading">Loading execution…</div>';
+  document.getElementById("dlBtn").onclick = ()=>downloadJob(jobId);
+  history.replaceState(null, "", "?job="+jobId);
+  try {
+    const res = await fetch(`${API}/db/share/${jobId}`);
+    if (!res.ok) throw new Error(`Not found (${res.status})`);
+    const h = await res.json();
+    if (!allHistory.find(x=>x.jobId===jobId)) allHistory.unshift(h);
+    _openDetailWithData(h);
+  } catch(e) {
+    document.getElementById("detailBody").innerHTML =
+      `<div class="empty-state"><p style="color:#f87171">Could not load execution: ${e.message}</p></div>`;
+  }
+}
+
+async function _openDetailWithData(h){
+  activeJobId = h.jobId;
+  panelPage = 1; panelStatusFilter = null; panelFieldFilter = null;
+  fsData = []; fsSortCol = "mismatched"; fsSortAsc = false;
+
+  history.replaceState(null, "", "?job="+h.jobId);
+  document.getElementById("detailPanel").classList.add("open");
+  document.getElementById("detailBody").innerHTML = '<div class="loading">Loading…</div>';
+  document.getElementById("dlBtn").onclick = ()=>downloadJob(h.jobId);
+  document.getElementById("detailTitle").innerText =
+    `${h.testCase||"N/A"} · ${new Date(h.date).toLocaleString()}`;
+
+  renderDetailBody(h);
+  await Promise.all([
+    loadFieldSummary(h.jobId),
+    loadPanelResults()
+  ]);
+}
+
+// ── RENDER DETAIL BODY SKELETON ────────────────────────────────────────
+function renderDetailBody(h) {
+  const fa  = h.fieldAccuracy ?? h.accuracy ?? 0;
+  const kmr = h.keyMatchRate  ?? 0;
+  const faWarn  = fa  < 70 ? "warn" : fa  < 90 ? "" : "field-acc";
+  const kmrWarn = kmr < 70 ? "warn" : kmr < 90 ? "" : "key-rate";
+
+  document.getElementById("detailBody").innerHTML = `
+
+    <div class="share-url-box">
+      <span style="color:#7a8fa8;font-size:11px;white-space:nowrap">🔗 Share:</span>
+      <input type="text" readonly value="${esc(buildShareUrl(h.jobId))}" onclick="this.select()">
+      <button class="copy-btn" onclick="copyShareLink('${h.jobId}')">Copy Link</button>
+    </div>
+
+    <div class="metrics-grid">
+      <div class="metric-box ${faWarn} field-acc">
+        <div class="m-val">${fa}%</div>
+        <div class="m-lbl">Field Accuracy<br><span style="color:#4b6280;font-size:10px">% of matched-key fields correct</span></div>
+      </div>
+      <div class="metric-box ${kmrWarn} key-rate">
+        <div class="m-val">${kmr}%</div>
+        <div class="m-lbl">Key Match Rate<br><span style="color:#4b6280;font-size:10px">% of keys found on both sides</span></div>
+      </div>
+    </div>
+
+    <div class="summary-rows">
+      <div class="summary-row"><span class="s-label">Status</span>            <span class="s-val"><span class="status-pill ${h.status}">${h.status}</span></span></div>
+      <div class="summary-row"><span class="s-label">Job ID</span>            <span class="s-val" style="font-family:monospace;font-size:11px">${h.jobId}</span></div>
+      <div class="summary-row"><span class="s-label">Total Comparisons</span> <span class="s-val">${(h.totalRecords||0).toLocaleString()}</span></div>
+      <div class="summary-row"><span class="s-label">Matched Fields</span>    <span class="s-val" style="color:#4ade80">${(h.matched||0).toLocaleString()}</span></div>
+      <div class="summary-row"><span class="s-label">Mismatched Fields</span> <span class="s-val" style="color:#f87171">${(h.mismatched||0).toLocaleString()}</span></div>
+      <div class="summary-row"><span class="s-label">Null Mismatches</span>   <span class="s-val" style="color:#fb923c">${(h.nullMismatches||0).toLocaleString()}</span></div>
+      <div class="summary-row"><span class="s-label">Keys in Both</span>      <span class="s-val" style="color:#60a5fa">${(h.keysInBoth||0).toLocaleString()}</span></div>
+      <div class="summary-row"><span class="s-label">Source-Only Keys</span>  <span class="s-val" style="color:#fb923c">${(h.keysSrcOnly||0).toLocaleString()}</span></div>
+      <div class="summary-row"><span class="s-label">Target-Only Keys</span>  <span class="s-val" style="color:#a78bfa">${(h.keysTgtOnly||0).toLocaleString()}</span></div>
+      <div class="summary-row"><span class="s-label">Source Duplicates</span> <span class="s-val">${(h.sourceDuplicates||0).toLocaleString()}</span></div>
+      <div class="summary-row"><span class="s-label">Target Duplicates</span> <span class="s-val">${(h.targetDuplicates||0).toLocaleString()}</span></div>
+      <div class="summary-row"><span class="s-label">Source Row Count</span>  <span class="s-val">${(h.srcRowCount||0).toLocaleString()}</span></div>
+      <div class="summary-row"><span class="s-label">Target Row Count</span>  <span class="s-val">${(h.tgtRowCount||0).toLocaleString()}</span></div>
+    </div>
+
+    <!-- FIELD SUMMARY placeholder -->
+    <div id="panelFsBox" class="field-summary-box" style="display:none">
+      <div class="field-summary-header" id="panelFsHeader" onclick="toggleFsPanel()">
+        <h3>📊 Mismatch Field Summary <span id="panelFsCount" style="color:#7a8fa8;font-weight:normal"></span></h3>
+        <span class="toggle-icon">▼</span>
+      </div>
+      <div class="field-summary-body" id="panelFsBody">
+        <div class="field-summary-controls">
+          <input class="field-summary-search" id="panelFsSearch" placeholder="🔍 Filter fields…" oninput="renderFsPanel()">
+          <select class="field-summary-filter-sel" id="panelFsFilter" onchange="renderFsPanel()">
+            <option value="all">All Fields</option>
+            <option value="mismatch">Has Mismatches</option>
+            <option value="perfect">Perfect (100%)</option>
+            <option value="failing">Failing (&lt;70%)</option>
+          </select>
+          <button class="btn-sec" onclick="exportFsCSV()" style="padding:5px 12px;font-size:12px;margin:0">⬇ Export Summary</button>
+        </div>
+        <table class="fs-table">
+          <thead>
+            <tr>
+              <th onclick="sortFs('field')"        id="fsh-field">Field <span class="sort-icon">↕</span></th>
+              <th onclick="sortFs('mismatched')"   id="fsh-mismatched" class="sorted">Mismatches <span class="sort-icon">↓</span></th>
+              <th onclick="sortFs('null_mismatch')"id="fsh-null_mismatch">Null Mismatches <span class="sort-icon">↕</span></th>
+              <th onclick="sortFs('matched')"      id="fsh-matched">Matched <span class="sort-icon">↕</span></th>
+              <th onclick="sortFs('total')"        id="fsh-total">Total <span class="sort-icon">↕</span></th>
+              <th onclick="sortFs('accuracy')"     id="fsh-accuracy">Accuracy <span class="sort-icon">↕</span></th>
+            </tr>
+          </thead>
+          <tbody id="panelFsBody_rows"></tbody>
+        </table>
+        <div class="fs-footer">
+          <span>💡 Click a field name to filter results to that field</span>
+          <span id="panelFsFooter"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESULTS section -->
+    <h3 class="section-heading">COMPARISON RESULTS</h3>
+
+    <!-- Field filter indicator -->
+    <div class="field-filter-bar" id="panelFieldFilterBar">
+      <span style="color:#4ade80">🔍</span>
+      <span id="panelFieldFilterLabel" style="color:#e8f0fe"></span>
+      <button onclick="clearPanelFieldFilter()" class="btn-sec" style="padding:3px 10px;font-size:11px;margin:0">✕ Clear</button>
+    </div>
+
+    <div class="panel-pagination" id="panelPagCtrl"></div>
+    <div class="results-table-wrap">
+      <table>
+        <thead><tr><th>Key</th><th>Field</th><th>Source</th><th>Target</th><th>Status</th></tr></thead>
+        <tbody id="panelResults"><tr><td colspan="5" style="text-align:center;color:#555;padding:20px">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ── FIELD SUMMARY LOAD ─────────────────────────────────────────────────
+async function loadFieldSummary(jobId){
+  try {
+    const res = await fetch(`${API}/db/field-summary/${jobId}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    fsData = data.summary || [];
+    if (!fsData.length) return;
+    const withMismatches = fsData.filter(f=>f.mismatched>0||f.null_mismatch>0).length;
+    document.getElementById("panelFsCount").innerText =
+      `— ${fsData.length} fields · ${withMismatches} with mismatches`;
+    document.getElementById("panelFsBox").style.display = "block";
+    renderFsPanel();
+  } catch(e) {
+    console.warn("Field summary failed:", e.message);
+  }
+}
+
+// ── FIELD SUMMARY RENDER ───────────────────────────────────────────────
+function renderFsPanel(){
+  const search    = (document.getElementById("panelFsSearch")?.value || "").toLowerCase();
+  const filterVal = document.getElementById("panelFsFilter")?.value || "all";
+  let data = fsData.filter(f=>{
+    if (search && !f.field.toLowerCase().includes(search)) return false;
+    if (filterVal==="mismatch" && f.mismatched===0 && f.null_mismatch===0) return false;
+    if (filterVal==="perfect"  && f.accuracy<100) return false;
+    if (filterVal==="failing"  && f.accuracy>=70) return false;
+    return true;
+  });
+  data.sort((a,b)=>{
+    let av = a[fsSortCol], bv = b[fsSortCol];
+    if (typeof av==="string") { av=av.toLowerCase(); bv=bv.toLowerCase(); }
+    return fsSortAsc ? (av>bv?1:-1) : (av<bv?1:-1);
+  });
+  const tbody = document.getElementById("panelFsBody_rows");
+  if (!tbody) return;
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#4b6280;padding:16px">No fields match.</td></tr>`;
+    document.getElementById("panelFsFooter").innerText = "";
+    return;
+  }
+  const totalMismatches = data.reduce((s,f)=>s+f.mismatched+f.null_mismatch, 0);
+  tbody.innerHTML = data.map(f=>{
+    const hasMismatch = f.mismatched>0 || f.null_mismatch>0;
+    const badgeClass  = f.accuracy===100 ? "badge-ok" : f.accuracy>=70 ? "badge-warn" : "badge-bad";
+    const barColor    = f.accuracy===100 ? "#4ade80"  : f.accuracy>=70 ? "#f59e0b"    : "#ef4444";
+    const pct         = totalMismatches>0
+      ? ((f.mismatched+f.null_mismatch)/totalMismatches*100).toFixed(1) : "0.0";
+    const isActive = panelFieldFilter === f.field;
+    const rowStyle = isActive ? 'style="background:#162438"' : '';
+    return `<tr ${rowStyle}>
+      <td><span class="clickable-field" onclick="drillField('${esc(f.field)}')">${esc(f.field)}</span></td>
+      <td>${hasMismatch
+        ? `<span class="mismatch-badge badge-bad">${f.mismatched.toLocaleString()}</span><span style="font-size:10px;color:#4b6280;margin-left:4px">${pct}%</span>`
+        : `<span style="color:#4ade80">✓ 0</span>`}</td>
+      <td>${f.null_mismatch>0
+        ? `<span class="mismatch-badge badge-warn">${f.null_mismatch.toLocaleString()}</span>`
+        : `<span style="color:#4b6280">0</span>`}</td>
+      <td style="color:#4ade80">${f.matched.toLocaleString()}</td>
+      <td style="color:#7a8fa8">${f.total.toLocaleString()}</td>
+      <td><div class="accuracy-cell">
+        <div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${f.accuracy}%;background:${barColor}"></div></div>
+        <span class="mismatch-badge ${badgeClass}">${f.accuracy}%</span>
+      </div></td>
+    </tr>`;
+  }).join("");
+  document.getElementById("panelFsFooter").innerText =
+    `Showing ${data.length} of ${fsData.length} fields · ${totalMismatches.toLocaleString()} total mismatches`;
+}
+
+function sortFs(col){
+  if (fsSortCol===col) fsSortAsc=!fsSortAsc;
+  else { fsSortCol=col; fsSortAsc=(col==="field"); }
+  document.querySelectorAll(".fs-table th").forEach(th=>th.classList.remove("sorted"));
+  const hdr = document.getElementById("fsh-"+col);
+  if (hdr) { hdr.classList.add("sorted"); hdr.querySelector(".sort-icon").innerText = fsSortAsc?"↑":"↓"; }
+  renderFsPanel();
+}
+
+function toggleFsPanel(){
+  document.getElementById("panelFsBody").classList.toggle("hidden");
+  document.getElementById("panelFsHeader").classList.toggle("collapsed");
+}
+
+function drillField(fieldName){
+  panelFieldFilter = fieldName;
+  panelPage = 1;
+  const fieldData = fsData.find(f => f.field === fieldName);
+  if (fieldData) {
+    if (fieldData.mismatched > 0 && fieldData.null_mismatch > 0) { panelStatusFilter = null; }
+    else if (fieldData.mismatched > 0)      { panelStatusFilter = "MISMATCH"; }
+    else if (fieldData.null_mismatch > 0)   { panelStatusFilter = "NULL_MISMATCH"; }
+    else                                     { panelStatusFilter = "MATCHED"; }
+  } else { panelStatusFilter = null; }
+  updateFieldFilterBar();
+  loadPanelResults();
+  renderFsPanel();
+  document.getElementById("panelResults")?.scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function clearPanelFieldFilter(){
+  panelFieldFilter  = null;
+  panelStatusFilter = null;
+  updateFieldFilterBar();
+  panelPage = 1;
+  loadPanelResults();
+  renderFsPanel();
+}
+
+function updateFieldFilterBar(){
+  const bar   = document.getElementById("panelFieldFilterBar");
+  const label = document.getElementById("panelFieldFilterLabel");
+  if (!bar) return;
+  if (panelFieldFilter) {
+    bar.classList.add("show");
+    const statusHint = panelStatusFilter ? ` · showing ${panelStatusFilter}` : " · showing ALL statuses";
+    label.innerText = `Filtered to field: "${panelFieldFilter}"${statusHint}`;
+  } else {
+    bar.classList.remove("show");
+  }
+}
+
+function exportFsCSV(){
+  if (!fsData.length) { alert("No field summary data."); return; }
+  const header = "field,matched,mismatched,null_mismatch,total,accuracy\n";
+  const rows   = fsData.map(f=>`${f.field},${f.matched},${f.mismatched},${f.null_mismatch},${f.total},${f.accuracy}`).join("\n");
+  const blob   = new Blob([header+rows], {type:"text/csv"});
+  const url    = URL.createObjectURL(blob);
+  const a      = document.createElement("a");
+  a.href=url; a.download=`field_summary_${(activeJobId||"export").slice(0,8)}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── PANEL RESULTS ──────────────────────────────────────────────────────
+async function loadPanelResults(){
+  if (!activeJobId) return;
+  try{
+    let url = `${API}/db/results/${activeJobId}?page=${panelPage}&pageSize=${panelPageSize}`;
+    if (panelStatusFilter) url += `&status=${panelStatusFilter}`;
+    if (panelFieldFilter)  url += `&field=${encodeURIComponent(panelFieldFilter)}`;
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    panelTotalPages = data.totalPages || 1;
+    const rows = (data.results||[]).map(r=>`
+      <tr class="${r.status==="MATCHED"?"good":"bad"}">
+        <td>${esc(r.key)}</td>
+        <td>${esc(r.field)}</td>
+        <td>${esc(r.source)}</td>
+        <td>${esc(r.target)}</td>
+        <td>${esc(r.status)}</td>
+      </tr>`).join("") || '<tr><td colspan="5" style="text-align:center;color:#555;padding:14px">No results</td></tr>';
+    document.getElementById("panelResults").innerHTML = rows;
+    if (panelFieldFilter) {
+      const statusHint = panelStatusFilter ? ` · showing ${panelStatusFilter}` : " · showing ALL statuses";
+      document.getElementById("panelFieldFilterLabel").innerText =
+        `Filtered to field: "${panelFieldFilter}"${statusHint} · ${(data.total||0).toLocaleString()} rows`;
+    }
+    document.getElementById("panelPagCtrl").innerHTML = `
+      <button onclick="panelGoPage(1)" ${panelPage===1?"disabled":""}>⏮</button>
+      <button onclick="panelGoPage(${panelPage-1})" ${panelPage===1?"disabled":""}>◀</button>
+      <span class="page-info">Page ${panelPage} / ${panelTotalPages}</span>
+      <button onclick="panelGoPage(${panelPage+1})" ${panelPage===panelTotalPages?"disabled":""}>▶</button>
+      <button onclick="panelGoPage(${panelTotalPages})" ${panelPage===panelTotalPages?"disabled":""}>⏭</button>
+      <select onchange="panelFilterStatus(this.value)" style="background:#1e2d45;border:1px solid #2a3f5f;color:#fff;padding:5px 8px;border-radius:4px;font-size:12px">
+        <option value=""             ${!panelStatusFilter                       ?"selected":""}>All Status</option>
+        <option value="MATCHED"      ${panelStatusFilter==="MATCHED"            ?"selected":""}>Matched</option>
+        <option value="MISMATCH"     ${panelStatusFilter==="MISMATCH"           ?"selected":""}>Mismatch</option>
+        <option value="SOURCE_ONLY"  ${panelStatusFilter==="SOURCE_ONLY"        ?"selected":""}>Source Only</option>
+        <option value="TARGET_ONLY"  ${panelStatusFilter==="TARGET_ONLY"        ?"selected":""}>Target Only</option>
+        <option value="NULL_MISMATCH"${panelStatusFilter==="NULL_MISMATCH"      ?"selected":""}>Null Mismatch</option>
+        <option value="SOURCE_DUPLICATE"${panelStatusFilter==="SOURCE_DUPLICATE"?"selected":""}>Src Dup</option>
+        <option value="TARGET_DUPLICATE"${panelStatusFilter==="TARGET_DUPLICATE"?"selected":""}>Tgt Dup</option>
+      </select>
+      <span style="font-size:11px;color:#4b6280">${(data.total||0).toLocaleString()} rows</span>
+    `;
+  } catch(e){
+    document.getElementById("panelResults").innerHTML =
+      `<tr><td colspan="5" style="color:#f87171;padding:14px">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function panelGoPage(p){ if(p<1||p>panelTotalPages) return; panelPage=p; loadPanelResults(); }
+function panelFilterStatus(v){
+  panelStatusFilter = v||null;
+  panelPage = 1;
+  updateFieldFilterBar();
+  loadPanelResults();
+}
+
+function closeDetail(){
+  document.getElementById("detailPanel").classList.remove("open");
+  activeJobId = null;
+  fsData = [];
+  const banner = document.getElementById("sharedBanner");
+  if (!banner.classList.contains("show"))
+    history.replaceState(null, "", window.location.pathname);
+}
+
+// ── DOWNLOAD CSV ───────────────────────────────────────────────────────
+async function downloadJob(jobId){
+  try{
+    const res  = await fetch(API+"/db/download",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jobId})});
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href=url; a.download=`etl_results_${jobId.slice(0,8)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  } catch(e){ alert("Download failed: "+e.message); }
+}
+function downloadFromPanel(){ if(activeJobId) downloadJob(activeJobId); }
+
+// ── UTIL ───────────────────────────────────────────────────────────────
+function esc(v){
+  if(v==null) return "";
+  const d=document.createElement("div"); d.textContent=String(v); return d.innerHTML;
+}
+
+// ═══════════════════════════════════════════════════════════
+// HTML REPORT EXPORTER
+// ═══════════════════════════════════════════════════════════
+function exportFromPanel() { exportHTMLReport(activeJobId, API); }
+function triggerExport(jobId) { exportHTMLReport(jobId, API); }
+
+async function exportHTMLReport(jobId, apiBase) {
+  if (!jobId) { alert("No job selected for export."); return; }
+  const btn = document.getElementById("exportHtmlBtnPanel");
+  if (btn) { btn.disabled = true; btn.innerText = "⏳ Preparing…"; }
+  try {
+    const metaRes = await fetch(`${apiBase}/db/share/${jobId}`);
+    if (!metaRes.ok) throw new Error("Could not load job metadata.");
+    const meta = await metaRes.json();
+
+    let fieldSummary = [];
+    try {
+      const fsRes = await fetch(`${apiBase}/db/field-summary/${jobId}`);
+      if (fsRes.ok) { const fd = await fsRes.json(); fieldSummary = fd.summary || []; }
+    } catch(e) {}
+
+    let allResults = [], page = 1, totalPgs = 999;
+    while (page <= totalPgs) {
+      const r = await fetch(`${apiBase}/db/results/${jobId}?page=${page}&pageSize=1000`);
+      if (!r.ok) break;
+      const d = await r.json();
+      allResults = allResults.concat(d.results || []);
+      totalPgs = d.totalPages || 1;
+      page++;
+      if (btn) btn.innerText = `⏳ ${allResults.length.toLocaleString()} rows…`;
+    }
+
+    const html = buildReportHTML(meta, fieldSummary, allResults);
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    const safeDate = (meta.date || "").slice(0, 10).replace(/-/g, "");
+    const safeCase = (meta.testCase || "report").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30);
+    a.href = url; a.download = `ETL_Report_${safeCase}_${safeDate}.html`; a.click();
+    URL.revokeObjectURL(url);
+    showToast("✓ HTML report downloaded!");
+  } catch(e) {
+    alert("Export failed: " + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerText = "⬇ Export HTML Report"; }
+  }
+}
+
+function buildReportHTML(meta, fieldSummary, allResults) {
+  const fa  = meta.fieldAccuracy ?? meta.accuracy ?? 0;
+  const kmr = meta.keyMatchRate  ?? 0;
+  const faColor  = fa  >= 90 ? "#4ade80" : fa  >= 70 ? "#f59e0b" : "#f87171";
+  const kmrColor = kmr >= 90 ? "#4ade80" : kmr >= 70 ? "#f59e0b" : "#f87171";
+  const escR = v => { if (v == null) return ""; const d = document.createElement("div"); d.textContent = String(v); return d.innerHTML; };
+  const totalMismatches = fieldSummary.reduce((s,f) => s + f.mismatched + f.null_mismatch, 0);
+  const fsRows = fieldSummary.map(f => {
+    const bc = f.accuracy===100?"#4ade8022;color:#4ade80":f.accuracy>=70?"#f59e0b22;color:#f59e0b":"#f8717122;color:#f87171";
+    const pct = totalMismatches>0?((f.mismatched+f.null_mismatch)/totalMismatches*100).toFixed(1):"0.0";
+    const bar = `<div style="display:inline-block;background:#1e2d45;border-radius:3px;height:6px;width:60px;overflow:hidden;vertical-align:middle;margin-right:6px"><div style="height:100%;width:${f.accuracy}%;background:${f.accuracy===100?"#4ade80":f.accuracy>=70?"#f59e0b":"#ef4444"}"></div></div>`;
+    return `<tr><td style="color:#e8f0fe">${escR(f.field)}</td><td style="color:${f.mismatched>0?"#f87171":"#4b6280"}">${f.mismatched.toLocaleString()}${f.mismatched>0?`<span style="font-size:10px;color:#4b6280;margin-left:4px">${pct}%</span>`:""}</td><td style="color:${f.null_mismatch>0?"#fb923c":"#4b6280"}">${f.null_mismatch.toLocaleString()}</td><td style="color:#4ade80">${f.matched.toLocaleString()}</td><td style="color:#7a8fa8">${f.total.toLocaleString()}</td><td>${bar}<span style="background:${bc};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">${f.accuracy}%</span></td></tr>`;
+  }).join("");
+  const STATUS_COLORS = {MATCHED:"#4ade80",MISMATCH:"#f87171",NULL_MISMATCH:"#fb923c",SOURCE_ONLY:"#a78bfa",TARGET_ONLY:"#c084fc",SOURCE_DUPLICATE:"#facc15",TARGET_DUPLICATE:"#fbbf24"};
+  const resultRows = allResults.map(r => {
+    const c = STATUS_COLORS[r.status]||"#e8f0fe";
+    const rowBg = r.status==="MATCHED"?"#0d2318":r.status==="MISMATCH"?"#2a0f0f":r.status==="NULL_MISMATCH"?"#2a1a00":"#1a1a2e";
+    return `<tr style="background:${rowBg}"><td style="font-size:11px;word-break:break-all">${escR(r.key)}</td><td>${escR(r.field)}</td><td style="word-break:break-all">${escR(r.source)}</td><td style="word-break:break-all">${escR(r.target)}</td><td><span style="background:${c}22;color:${c};padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold;display:inline-block">${escR(r.status)}</span></td></tr>`;
+  }).join("");
+  const generatedAt = new Date().toLocaleString();
+  const fsSection = fieldSummary.length ? `
+  <div class="section">
+    <div class="collapsible-header" onclick="toggleSection('fs')"><h3>📊 Mismatch Field Summary <span style="color:#7a8fa8;font-weight:normal;font-size:12px">— ${fieldSummary.length} fields</span></h3><span class="chevron">▼</span></div>
+    <div class="collapsible-body" id="fs-body">
+      <div class="filter-bar"><input id="fs-search" placeholder="🔍 Filter fields…" oninput="filterFs()"><select id="fs-filter" onchange="filterFs()"><option value="all">All Fields</option><option value="mismatch">Has Mismatches</option><option value="perfect">Perfect (100%)</option><option value="failing">Failing (&lt;70%)</option></select><span class="count-badge" id="fs-count">${fieldSummary.length} fields</span></div>
+      <div class="table-wrap"><table><thead><tr><th onclick="sortFsCol('field')" style="cursor:pointer">Field ↕</th><th onclick="sortFsCol('mismatched')" style="cursor:pointer;color:#00d4ff">Mismatches ↓</th><th onclick="sortFsCol('null_mismatch')" style="cursor:pointer">Null Mismatches ↕</th><th onclick="sortFsCol('matched')" style="cursor:pointer">Matched ↕</th><th onclick="sortFsCol('total')" style="cursor:pointer">Total ↕</th><th onclick="sortFsCol('accuracy')" style="cursor:pointer">Accuracy ↕</th></tr></thead><tbody id="fs-tbody">${fsRows}</tbody></table></div>
+      <div style="padding:8px 0;font-size:11px;color:#4b6280" id="fs-footer">Showing ${fieldSummary.length} fields · ${totalMismatches.toLocaleString()} total mismatches</div>
+    </div>
+  </div>` : "";
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>ETL Report — ${escR(meta.testCase||"N/A")}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0e17;color:#e8f0fe;font-family:'Segoe UI',Arial,sans-serif;min-height:100vh;padding-bottom:60px}
+.report-header{background:#0d1220;border-bottom:2px solid #00d4ff;padding:20px 32px;display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.report-header h1{font-size:22px;font-weight:700;letter-spacing:.5px;margin-bottom:4px}
+.report-header .sub{font-size:12px;color:#7a8fa8}
+.badge{background:#00d4ff;color:#0a0e17;padding:3px 10px;border-radius:3px;font-size:11px;font-weight:bold}
+.COMPLETED{background:#15382166;color:#4ade80;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}
+.FAILED{background:#4c1d1d66;color:#f87171;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}
+.CANCELLED{background:#2d1f0066;color:#fb923c;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}
+.body{max-width:1400px;margin:0 auto;padding:28px 32px}
+.section{margin-bottom:32px}
+.section-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#4b6280;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #1e2d45}
+.metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}
+.metric-card{background:#111827;border:1px solid #1e2d45;border-radius:8px;padding:16px}
+.metric-card .val{font-size:30px;font-weight:800;line-height:1}
+.metric-card .lbl{font-size:11px;color:#7a8fa8;margin-top:6px}
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#111827;border-radius:4px;font-size:12px}
+.stat-row .s-label{color:#7a8fa8}.stat-row .s-val{font-weight:700}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#111827;color:#7a8fa8;padding:9px 12px;text-align:left;border-bottom:1px solid #1e2d45;white-space:nowrap;position:sticky;top:0;z-index:2}
+td{padding:8px 12px;border-bottom:1px solid #111827}
+.table-wrap{border:1px solid #1e2d45;border-radius:6px;overflow:hidden}
+.results-wrap{max-height:520px;overflow-y:auto;border:1px solid #1e2d45;border-radius:6px}
+.filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.filter-bar input,.filter-bar select{background:#111827;border:1px solid #2a3f5f;color:#fff;padding:6px 10px;border-radius:4px;font-size:12px}
+.filter-bar input{width:220px}
+.count-badge{background:#1e2d45;padding:4px 12px;border-radius:4px;font-size:11px;color:#7a8fa8}
+.export-note{background:#0d2040;border:1px solid #1e2d45;border-radius:6px;padding:12px 16px;font-size:11px;color:#7a8fa8;margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.footer{text-align:center;padding:32px;color:#3a4f6a;font-size:11px;border-top:1px solid #1a2638;margin-top:40px}
+.collapsible-header{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:12px 16px;background:#111827;border-radius:6px 6px 0 0;user-select:none}
+.collapsible-header:hover{background:#141e30}
+.collapsible-header h3{font-size:13px;margin:0}
+.collapsible-header .chevron{color:#00d4ff;font-size:15px;transition:transform .2s}
+.collapsible-header.collapsed .chevron{transform:rotate(-90deg)}
+.collapsible-body{padding:16px;background:#0d1a2e;border:1px solid #1e2d45;border-top:none;border-radius:0 0 6px 6px}
+.collapsible-body.hidden{display:none}
+.csv-btn{background:#1e2d45;color:#e8f0fe;border:none;padding:6px 14px;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold}
+.csv-btn:hover{background:#2a3f5f}
+@media(max-width:700px){.metrics-grid{grid-template-columns:1fr 1fr}.stats-grid{grid-template-columns:1fr}}
+</style></head><body>
+<div class="report-header">
+  <div><h1>📋 ETL Comparison Report</h1><div class="sub">${escR(meta.testCase||"N/A")} &nbsp;·&nbsp; ${new Date(meta.date).toLocaleString()} &nbsp;·&nbsp; Job: <code style="font-size:11px">${escR(meta.jobId)}</code></div></div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="${meta.status}">${escR(meta.status)}</span><span class="badge">v9.1</span><button class="csv-btn" onclick="downloadCSV()">⬇ Export CSV</button></div>
+</div>
+<div class="body">
+  <div class="export-note">📄 <span>Self-contained offline report &nbsp;·&nbsp; Generated ${generatedAt} &nbsp;·&nbsp; ${allResults.length.toLocaleString()} total rows embedded</span></div>
+  <div class="metrics-grid">
+    <div class="metric-card"><div class="val" style="color:${faColor}">${fa}%</div><div class="lbl">Field Accuracy</div></div>
+    <div class="metric-card"><div class="val" style="color:${kmrColor}">${kmr}%</div><div class="lbl">Key Match Rate</div></div>
+    <div class="metric-card"><div class="val" style="color:#60a5fa">${(meta.totalRecords||0).toLocaleString()}</div><div class="lbl">Total Comparisons</div></div>
+    <div class="metric-card"><div class="val" style="color:#f87171">${(meta.mismatched||0).toLocaleString()}</div><div class="lbl">Mismatched Fields</div></div>
+  </div>
+  <div class="section"><div class="section-title">Execution Statistics</div><div class="stats-grid">
+    <div class="stat-row"><span class="s-label">Matched Fields</span><span class="s-val" style="color:#4ade80">${(meta.matched||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Null Mismatches</span><span class="s-val" style="color:#fb923c">${(meta.nullMismatches||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Source-Only Keys</span><span class="s-val" style="color:#fb923c">${(meta.keysSrcOnly||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Target-Only Keys</span><span class="s-val" style="color:#a78bfa">${(meta.keysTgtOnly||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Keys in Both</span><span class="s-val" style="color:#60a5fa">${(meta.keysInBoth||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Source Duplicates</span><span class="s-val">${(meta.sourceDuplicates||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Target Duplicates</span><span class="s-val">${(meta.targetDuplicates||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Source Row Count</span><span class="s-val">${(meta.srcRowCount||0).toLocaleString()}</span></div>
+    <div class="stat-row"><span class="s-label">Target Row Count</span><span class="s-val">${(meta.tgtRowCount||0).toLocaleString()}</span></div>
+  </div></div>
+  ${fsSection}
+  <div class="section">
+    <div class="collapsible-header" onclick="toggleSection('results')"><h3>🔍 Comparison Results <span style="color:#7a8fa8;font-weight:normal;font-size:12px">— ${allResults.length.toLocaleString()} rows</span></h3><span class="chevron">▼</span></div>
+    <div class="collapsible-body" id="results-body">
+      <div class="filter-bar"><input id="r-search" placeholder="🔍 Search key or field…" oninput="filterResults()"><select id="r-status" onchange="filterResults()"><option value="">All Status</option><option value="MATCHED">Matched</option><option value="MISMATCH">Mismatch</option><option value="NULL_MISMATCH">Null Mismatch</option><option value="SOURCE_ONLY">Source Only</option><option value="TARGET_ONLY">Target Only</option><option value="SOURCE_DUPLICATE">Source Duplicate</option><option value="TARGET_DUPLICATE">Target Duplicate</option></select><span class="count-badge" id="r-count">${allResults.length.toLocaleString()} rows</span></div>
+      <div class="results-wrap"><table><thead><tr><th style="width:25%">Key</th><th style="width:12%">Field</th><th style="width:24%">Source</th><th style="width:24%">Target</th><th style="width:15%">Status</th></tr></thead><tbody id="r-tbody">${resultRows}</tbody></table></div>
+      <div style="padding:8px 0;font-size:11px;color:#4b6280" id="r-footer">Showing all ${allResults.length.toLocaleString()} rows</div>
+    </div>
+  </div>
+</div>
+<div class="footer">ETL Automation Tool v9.1 &nbsp;·&nbsp; Report generated ${generatedAt}<br>Self-contained offline snapshot. Data reflects the state at time of export.</div>
+<script>
+const ALL_RESULTS=${JSON.stringify(allResults)};
+const FIELD_SUMMARY=${JSON.stringify(fieldSummary)};
+function toggleSection(id){const b=document.getElementById(id+'-body');b.previousElementSibling.classList.toggle('collapsed');b.classList.toggle('hidden');}
+let fsSortCol='mismatched',fsSortAsc=false;
+function filterFs(){const q=(document.getElementById('fs-search')?.value||'').toLowerCase();const fv=document.getElementById('fs-filter')?.value||'all';let data=FIELD_SUMMARY.filter(f=>{if(q&&!f.field.toLowerCase().includes(q))return false;if(fv==='mismatch'&&f.mismatched===0&&f.null_mismatch===0)return false;if(fv==='perfect'&&f.accuracy<100)return false;if(fv==='failing'&&f.accuracy>=70)return false;return true;});data.sort((a,b)=>{let av=a[fsSortCol],bv=b[fsSortCol];if(typeof av==='string'){av=av.toLowerCase();bv=bv.toLowerCase();}return fsSortAsc?(av>bv?1:-1):(av<bv?1:-1);});const totalMm=data.reduce((s,f)=>s+f.mismatched+f.null_mismatch,0);document.getElementById('fs-tbody').innerHTML=data.map(f=>{const bc=f.accuracy===100?'#4ade8022;color:#4ade80':f.accuracy>=70?'#f59e0b22;color:#f59e0b':'#f8717122;color:#f87171';const pct=totalMm>0?((f.mismatched+f.null_mismatch)/totalMm*100).toFixed(1):'0.0';const bar='<div style="display:inline-block;background:#1e2d45;border-radius:3px;height:6px;width:60px;overflow:hidden;vertical-align:middle;margin-right:6px"><div style="height:100%;width:'+f.accuracy+'%;background:'+(f.accuracy===100?'#4ade80':f.accuracy>=70?'#f59e0b':'#ef4444')+'"></div></div>';return '<tr><td style="color:#e8f0fe">'+f.field+'</td><td style="color:'+(f.mismatched>0?'#f87171':'#4b6280')+'">'+f.mismatched.toLocaleString()+(f.mismatched>0?'<span style="font-size:10px;color:#4b6280;margin-left:4px">'+pct+'%</span>':'')+'</td><td style="color:'+(f.null_mismatch>0?'#fb923c':'#4b6280')+'">'+f.null_mismatch.toLocaleString()+'</td><td style="color:#4ade80">'+f.matched.toLocaleString()+'</td><td style="color:#7a8fa8">'+f.total.toLocaleString()+'</td><td>'+bar+'<span style="background:'+bc+';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">'+f.accuracy+'%</span></td></tr>';}).join('');document.getElementById('fs-count').innerText=data.length+' fields';document.getElementById('fs-footer').innerText='Showing '+data.length+' of '+FIELD_SUMMARY.length+' fields \xb7 '+totalMm.toLocaleString()+' total mismatches';}
+function sortFsCol(col){fsSortAsc=fsSortCol===col?!fsSortAsc:col==='field';fsSortCol=col;filterFs();}
+const SC={MATCHED:'#4ade80',MISMATCH:'#f87171',NULL_MISMATCH:'#fb923c',SOURCE_ONLY:'#a78bfa',TARGET_ONLY:'#c084fc',SOURCE_DUPLICATE:'#facc15',TARGET_DUPLICATE:'#fbbf24'};
+function filterResults(){const q=(document.getElementById('r-search').value||'').toLowerCase();const st=document.getElementById('r-status').value;const data=ALL_RESULTS.filter(r=>(!st||r.status===st)&&(!q||r.key?.toLowerCase().includes(q)||r.field?.toLowerCase().includes(q)));const rb=r=>r.status==='MATCHED'?'#0d2318':r.status==='MISMATCH'?'#2a0f0f':r.status==='NULL_MISMATCH'?'#2a1a00':'#1a1a2e';const pill=r=>{const c=SC[r.status]||'#e8f0fe';return 'background:'+c+'22;color:'+c+';padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold;display:inline-block';};function e(v){if(v==null)return'';const d=document.createElement('div');d.textContent=String(v);return d.innerHTML;}document.getElementById('r-tbody').innerHTML=data.map(r=>'<tr style="background:'+rb(r)+'"><td style="font-size:11px;word-break:break-all">'+e(r.key)+'</td><td>'+e(r.field)+'</td><td style="word-break:break-all">'+e(r.source)+'</td><td style="word-break:break-all">'+e(r.target)+'</td><td><span style="'+pill(r)+'">'+e(r.status)+'</span></td></tr>').join('');document.getElementById('r-count').innerText=data.length.toLocaleString()+' rows';document.getElementById('r-footer').innerText='Showing '+data.length.toLocaleString()+' of '+ALL_RESULTS.length.toLocaleString()+' rows';}
+function downloadCSV(){const h='key,field,source,target,status\\n';const r=ALL_RESULTS.map(r=>[r.key,r.field,r.source,r.target,r.status].map(v=>'"'+(v||'').replace(/"/g,'""')+'"').join(',')).join('\\n');const b=new Blob([h+r],{type:'text/csv'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='etl_results_export.csv';a.click();URL.revokeObjectURL(u);}
+<\/script></body></html>`;
+}
+
+// ── INIT ───────────────────────────────────────────────────────────────
+loadHistory();
+setInterval(() => loadHistory(true), 30000);
+</script>
+</body>
+</html>

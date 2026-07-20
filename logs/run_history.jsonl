@@ -1,0 +1,2 @@
+{"run_id": "59349C5F", "status": "FAILED", "started_at": "2026-05-04T21:03:29.016497", "finished_at": "2026-05-04T21:03:33.340711", "duration_s": 4.32, "steps_passed": 0, "steps_failed": 1, "total_rows_loaded": 0, "ge_passed": 0, "ge_failed": 0, "triggered_by": "manual"}
+{"run_id": "97447030", "status": "FAILED", "started_at": "2026-05-04T21:07:31.647289", "finished_at": "2026-05-04T21:07:35.812638", "duration_s": 4.17, "steps_passed": 0, "steps_failed": 1, "total_rows_loaded": 0, "ge_passed": 0, "ge_failed": 0, "triggered_by": "manual"}
