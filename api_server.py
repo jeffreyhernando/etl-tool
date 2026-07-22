@@ -1,3 +1,12 @@
+"""
+ETL Engine v9.2 - UPDATED ADDRESS + ADDRESS2 BUSINESS RULES
+Changes from v9.1:
+  - address_normalized_strict: now strips suite/unit/building/floor suffixes
+    before comparing, so "1400 E BOULDER STREET,SUITE 2508" matches "1400 E BOULDER ST"
+  - address2_suite_ignored: new rule — treats null/empty source vs suite-only target
+    as MATCHED (suite data is expected to live in address field on source side)
+"""
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -10,14 +19,15 @@ import os
 import traceback
 import json
 import sqlite3
+import re
 from datetime import datetime
 
 from typing import Dict, Any, List, Optional
 from threading import Thread, Lock, Event
 
 app = FastAPI(
-    title="ETL Engine Enterprise - Optimized",
-    version="9.1"
+    title="ETL Engine Enterprise - Optimized (v9.2 with Business Rules)",
+    version="9.2-BR"
 )
 
 # ================= CORS =================
@@ -34,8 +44,8 @@ app.add_middleware(
 
 os.makedirs("outputs", exist_ok=True)
 
-jobs = {}               # in-memory job tracker
-cancel_events = {}      # job_id -> threading.Event for cancellation
+jobs = {}
+cancel_events = {}
 execution_signatures = set()
 lock = Lock()
 
@@ -72,7 +82,6 @@ def init_db():
         )
     """)
 
-    # Migrate existing DB: add new columns if they don't exist yet
     existing = {row[1] for row in cur.execute("PRAGMA table_info(execution_history)").fetchall()}
     for col, typedef in [
         ("key_match_rate",    "REAL    DEFAULT 0"),
@@ -109,8 +118,6 @@ init_db()
 # ================= RELOAD COMPLETED JOBS ON STARTUP =================
 
 def reload_jobs_from_db():
-    """Restore completed job metadata into the in-memory jobs dict so
-    pollJob() never returns NOT_FOUND after a server restart."""
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
     cur.execute("""
@@ -159,6 +166,399 @@ def reload_jobs_from_db():
 
 reload_jobs_from_db()
 
+
+# =========================================================
+#  ADDRESS NORMALIZATION  (v9.2 -- suite-strip + abbrev expand)
+# =========================================================
+
+# Regex that matches trailing suite / unit / building / floor info.
+# Covers patterns like:
+#   ,SUITE 2508   , STE 100B   ,UNIT 101   ,BUILDING 1   ,BLDG B
+#   ,1ST FLOOR    ,FL 3        ,APT 4C     ,# 200
+# The comma before is optional so bare "SUITE …" at end also strips.
+_SUITE_SUFFIX_RE = re.compile(
+    r'(?:'
+    # Pattern A: comma + suite keyword + optional value  e.g. ",SUITE 2508" ",STE A" ",BUILDING B"
+    r'[,]\s*(?:SUITE|STE|UNIT|APT|APARTMENT|BUILDING|BLDG|FLOOR|FL|RM|ROOM|#|NO\.?)[\s#]*[\w\-/]*(?:\s+[\w\-/]+)*'
+    r'|'
+    # Pattern B: comma + ordinal + floor/building keyword  e.g. ",1ST FLOOR" ",2ND FLOOR"
+    r'[,]\s*\d+(?:ST|ND|RD|TH)\s+(?:FLOOR|FL|BUILDING|BLDG)'
+    r'|'
+    # Pattern C: space-separated, but ONLY if suite keyword is followed by a digit
+    #            Prevents "DR" / "ST" street types from being stripped
+    r'\s+(?:SUITE|STE|UNIT|APT|APARTMENT|BUILDING|BLDG|FLOOR|FL|RM|ROOM|#|NO\.?)\s+[\d][\w\-/]*(?:\s+[\w\-/]+)*'
+    r'|'
+    # Pattern D: space + ordinal + FLOOR at end (no comma)  e.g. " 1ST FLOOR"
+    r'\s+\d+(?:ST|ND|RD|TH)\s+(?:FLOOR|FL)'
+    r')'
+    r'\s*$',
+    re.IGNORECASE
+)
+
+# Also strip a lone trailing comma (e.g. "13445 VOYAGER PARKWAY,")
+_TRAILING_COMMA_RE = re.compile(r',\s*$')
+
+# Street-type abbreviation expansions (applied before comparison)
+_ABBREV_MAP = [
+    (r'\bAVE\.?\b',      'AVENUE'),
+    (r'\bST\.?\b',       'STREET'),
+    (r'\bDR\.?\b',       'DRIVE'),
+    (r'\bRD\.?\b',       'ROAD'),
+    (r'\bPL\.?\b',       'PLACE'),
+    (r'\bBLVD\.?\b',     'BOULEVARD'),
+    (r'\bPKWY\.?\b',     'PARKWAY'),
+    (r'\bCT\.?\b',       'COURT'),
+    (r'\bLN\.?\b',       'LANE'),
+    (r'\bCIR\.?\b',      'CIRCLE'),
+    (r'\bTER\.?\b',      'TERRACE'),
+    (r'\bHWY\.?\b',      'HIGHWAY'),
+    (r'\bVW\.?\b',       'VIEW'),
+    (r'\bPT\.?\b',       'POINT'),
+    (r'\bMT\.?\b',       'MOUNT'),
+    (r'\bFT\.?\b',       'FORT'),
+    (r'\bGRV\.?\b',      'GROVE'),
+    (r'\bPLZ\.?\b',      'PLAZA'),
+    (r'\bE\.?\b',        'EAST'),
+    (r'\bW\.?\b',        'WEST'),
+    (r'\bN\.?\b',        'NORTH'),
+    (r'\bS\.?\b',        'SOUTH'),
+]
+_ABBREV_COMPILED = [(re.compile(p, re.IGNORECASE), r) for p, r in _ABBREV_MAP]
+
+# =========================================================
+#  SUITE-ONLY VALUE DETECTOR (for address2 rule)
+# =========================================================
+_SUITE_ONLY_RE = re.compile(
+    r'^\s*('
+    r'(?:SUITE|STE|UNIT|APT|APARTMENT|BUILDING|BLDG|FLOOR|FL|RM|ROOM|#|NO\.?)[\s#]*[\w\-/]*(?:\s+[\w\-/]+)*'
+    r'|'
+    r'\d+(?:ST|ND|RD|TH)\s+(?:FLOOR|FL)'    # 1ST FLOOR, 3RD FLOOR
+    r'|'
+    r'\d+(?:TH|ST|ND|RD)?\s+FL'             # 6TH FL
+    r'|'
+    r'[A-Z]{1,3}\d{2,}'                      # F1051, M1921
+    r'|'
+    r'\d+\.\d+(?:\s+\d+\.\d+)*'             # 1.220 1.222
+    r')\s*$',
+    re.IGNORECASE
+)
+
+def is_suite_only_value(val: str) -> bool:
+    """True if value is purely secondary-unit info: STE 100, F1051, 1ST FLOOR, 6TH FL, etc."""
+    return bool(_SUITE_ONLY_RE.match(str(val).strip()))
+
+
+def normalize_address(addr: str, strip_suite: bool = True) -> str:
+    """
+    Normalize an address for comparison:
+      1. Strip suite/unit/building/floor suffix (suite strip runs BEFORE abbrev expansion
+         so directional abbreviations like E/W/N/S inside suite labels are already gone)
+      2. Expand street abbreviations
+      3. Collapse whitespace, remove punctuation, uppercase
+    """
+    if addr is None:
+        return ""
+    addr = str(addr).strip()
+    if strip_suite:
+        addr = _SUITE_SUFFIX_RE.sub('', addr)
+        addr = _TRAILING_COMMA_RE.sub('', addr)
+    for pattern, replacement in _ABBREV_COMPILED:
+        addr = pattern.sub(replacement, addr)
+    addr = re.sub(r'\s+', ' ', addr)
+    addr = re.sub(r'[.,!?;:\'"()]', '', addr)
+    return addr.upper().strip()
+
+
+def addresses_match(src: str, tgt: str) -> bool:
+    """True when both addresses refer to the same street, ignoring suite/unit/floor/building."""
+    return normalize_address(src) == normalize_address(tgt)
+
+
+# =========================================================
+#  NAME HANDLING
+# =========================================================
+def extract_name_components(full_name: str) -> Dict[str, str]:
+    if not full_name:
+        return {"first": "", "middle": "", "last": ""}
+    parts = str(full_name).strip().split()
+    if len(parts) == 1:
+        return {"first": parts[0], "middle": "", "last": ""}
+    elif len(parts) == 2:
+        return {"first": parts[0], "middle": "", "last": parts[1]}
+    else:
+        return {"first": parts[0], "middle": " ".join(parts[1:-1]), "last": parts[-1]}
+
+
+def names_match_with_middle(src: str, tgt: str) -> bool:
+    if not src or not tgt:
+        return False
+    sp = extract_name_components(src)
+    tp = extract_name_components(tgt)
+    sf, sm, sl = sp["first"].lower(), sp["middle"].lower(), sp["last"].lower()
+    tf, tm, tl = tp["first"].lower(), tp["middle"].lower(), tp["last"].lower()
+    if sf == tf and sm == tm and sl == tl:
+        return True
+    if sf == tf and sl == tl:
+        return True
+    return False
+
+
+# =========================================================
+#  BOOLEAN COMPARISON
+# =========================================================
+def to_boolean(val: Any) -> Optional[bool]:
+    if val is None:
+        return None
+    if isinstance(val, bool):
+        return val
+    val_str = str(val).strip().lower()
+    if val_str in ("true", "t", "1", "yes", "y", "on", "enabled", "active"):
+        return True
+    elif val_str in ("false", "f", "0", "no", "n", "off", "disabled", "inactive", ""):
+        return False
+    return None
+
+
+def booleans_match(src: Any, tgt: Any) -> bool:
+    sb = to_boolean(src)
+    tb = to_boolean(tgt)
+    if sb is None or tb is None:
+        return False
+    return sb == tb
+
+
+# =========================================================
+#  NUMERIC / PHONE
+# =========================================================
+def strip_numeric_punctuation(val: str) -> str:
+    if not val:
+        return ""
+    return re.sub(r'[\-\(\)\s]', '', str(val))
+
+
+def numeric_with_punct_match(src: Any, tgt: Any, tolerance: float = 0.01) -> bool:
+    try:
+        sc = strip_numeric_punctuation(str(src))
+        tc = strip_numeric_punctuation(str(tgt))
+        if sc == tc:
+            return True
+        sn = float(re.sub(r'[^\d.]', '', sc))
+        tn = float(re.sub(r'[^\d.]', '', tc))
+        return abs(sn - tn) <= tolerance
+    except (ValueError, AttributeError):
+        return False
+
+
+# =========================================================
+#  NULL/EMPTY
+# =========================================================
+def is_null_or_empty(val: Any) -> bool:
+    if val is None:
+        return True
+    if isinstance(val, str):
+        return len(val.strip()) == 0
+    return False
+
+
+# =========================================================
+#  UNIFIED COMPARISON LOGIC  (v9.2)
+# =========================================================
+def compare_field_values(src: Any, tgt: Any, field_name: str, rule: str) -> str:
+    """
+    Returns: "MATCHED", "MISMATCH", or "NULL_MISMATCH"
+
+    address_normalized_strict  -- strip suite/bldg/floor + expand abbrevs, compare street only
+    address2_suite_ignored     -- null src vs STE/UNIT/FLOOR/F1051/M1921 target => MATCHED
+    first_name_with_initial    -- flexible middle name / embedded initial
+    numeric_flexible           -- strips ()-. for phones, IDs, numbers
+    boolean_match              -- Y/N, true/false, 1/0, yes/no
+    exact                      -- case-sensitive exact match
+    string_normalized          -- case-insensitive exact match
+    """
+
+    src_null = is_null_or_empty(src)
+    tgt_null = is_null_or_empty(tgt)
+
+    # ADDRESS LINE 2 / SUITE-IGNORED
+    if rule == "address2_suite_ignored":
+        if src_null and tgt_null:
+            return "MATCHED"
+        if src_null and not tgt_null:
+            if is_suite_only_value(str(tgt)):
+                return "MATCHED"
+            return "NULL_MISMATCH"
+        if not src_null and tgt_null:
+            return "NULL_MISMATCH"
+        return "MATCHED" if addresses_match(str(src), str(tgt)) else "MISMATCH"
+
+    # STANDARD NULL CHECK (all other rules)
+    if src_null and tgt_null:
+        return "MATCHED"
+    elif src_null or tgt_null:
+        return "NULL_MISMATCH"
+
+    # ADDRESS RULES
+    if rule == "address_normalized_strict":
+        return "MATCHED" if addresses_match(str(src), str(tgt)) else "MISMATCH"
+
+    if rule == "address_component":
+        return "MATCHED" if str(src).strip().lower() == str(tgt).strip().lower() else "MISMATCH"
+
+    # NAME RULES
+    if rule == "first_name_with_initial":
+        src_clean = str(src).strip().upper()
+        tgt_clean = str(tgt).strip().upper()
+        if names_match_with_middle(src, tgt):
+            return "MATCHED"
+        tgt_stripped = re.sub(r'\s+[A-Z]$', '', tgt_clean)
+        if src_clean == tgt_stripped:
+            return "MATCHED"
+        src_stripped = re.sub(r'\s+[A-Z]$', '', src_clean)
+        if src_stripped == tgt_clean:
+            return "MATCHED"
+        return "MISMATCH"
+
+    # NUMERIC / PHONE RULES
+    if rule == "numeric_flexible":
+        try:
+            src_clean = re.sub(r'[\-\(\)\[\]\s,]', '', str(src))
+            tgt_clean = re.sub(r'[\-\(\)\[\]\s,]', '', str(tgt))
+            if src_clean == tgt_clean:
+                return "MATCHED"
+            src_num = float(re.sub(r'[^\d.]', '', src_clean))
+            tgt_num = float(re.sub(r'[^\d.]', '', tgt_clean))
+            return "MATCHED" if abs(src_num - tgt_num) <= 0.01 else "MISMATCH"
+        except (ValueError, AttributeError):
+            return "MISMATCH"
+
+    # BOOLEAN RULES
+    if "boolean" in rule.lower():
+        return "MATCHED" if booleans_match(src, tgt) else "MISMATCH"
+
+    if "is_" in field_name.lower() or "flag" in field_name.lower():
+        return "MATCHED" if booleans_match(src, tgt) else "MISMATCH"
+
+    src_bool_attempt = to_boolean(src)
+    tgt_bool_attempt = to_boolean(tgt)
+    if src_bool_attempt is not None and tgt_bool_attempt is not None:
+        return "MATCHED" if src_bool_attempt == tgt_bool_attempt else "MISMATCH"
+
+    # DEFAULT RULES
+    if rule == "exact":
+        return "MATCHED" if str(src).strip() == str(tgt).strip() else "MISMATCH"
+
+    elif rule == "string_normalized":
+        return "MATCHED" if str(src).strip().lower() == str(tgt).strip().lower() else "MISMATCH"
+
+    elif rule == "numeric_tolerance":
+        try:
+            src_num = float(str(src).replace(",", ""))
+            tgt_num = float(str(tgt).replace(",", ""))
+            return "MATCHED" if abs(src_num - tgt_num) <= 0.01 else "MISMATCH"
+        except (ValueError, AttributeError):
+            return "MISMATCH"
+
+    elif rule == "numeric_ignore_punctuation":
+        return "MATCHED" if numeric_with_punct_match(src, tgt) else "MISMATCH"
+
+    # Default fallback
+    return "MATCHED" if str(src).strip() == str(tgt).strip() else "MISMATCH"
+
+
+# ================= CONFIG =================
+
+class DBConfig(BaseModel):
+    host: str
+    database: str
+    username: str
+    password: str
+    port: int = 1433
+
+# ================= DB CONNECTION =================
+
+def get_connection(cfg: DBConfig):
+    server = cfg.host if "\\" in cfg.host else f"{cfg.host},{cfg.port}"
+    conn_str = (
+        "DRIVER={ODBC Driver 17 for SQL Server};"
+        f"SERVER={server};DATABASE={cfg.database};"
+        f"UID={cfg.username};PWD={cfg.password};"
+        "TrustServerCertificate=yes;"
+    )
+    return pyodbc.connect(conn_str)
+
+# ================= SQL FILTER BUILDER =================
+
+def build_where_clause(filters, col_prefix=""):
+    if not filters:
+        return "", []
+    conditions, params = [], []
+    for f in filters:
+        field    = f.get("field")
+        operator = f.get("operator")
+        value    = f.get("value")
+        if not field:
+            continue
+        col      = f"[{field}]" if not col_prefix else f"{col_prefix}.[{field}]"
+        safe_col = f"TRY_CONVERT(NVARCHAR(500), {col})"
+        val_is_null = (value is None or str(value).strip().lower() in ("null", ""))
+        if val_is_null:
+            if operator in ("equals", ""):
+                conditions.append(f"{col} IS NULL")
+            elif operator == "not_equals":
+                conditions.append(f"{col} IS NOT NULL")
+            continue
+        if operator == "equals":
+            conditions.append(f"{safe_col} = ?");        params.append(str(value))
+        elif operator == "not_equals":
+            conditions.append(f"({safe_col} != ? OR {col} IS NULL)"); params.append(str(value))
+        elif operator == "contains":
+            conditions.append(f"{safe_col} LIKE ?");     params.append(f"%{value}%")
+        elif operator == "starts_with":
+            conditions.append(f"{safe_col} LIKE ?");     params.append(f"{value}%")
+        elif operator == "greater_than":
+            conditions.append(f"{col} > ?");             params.append(value)
+        elif operator == "less_than":
+            conditions.append(f"{col} < ?");             params.append(value)
+    return (" AND " + " AND ".join(conditions), params) if conditions else ("", [])
+
+# ================= SAFE LIMIT =================
+
+def safe_limit(v):
+    try:
+        v = int(v)
+        return 1000000 if v <= 0 else min(v, 100000)
+    except:
+        return 100
+
+# ================= BATCH FETCH =================
+
+def fetch_with_filters(cur, schema, table, cols, limit, filters=None,
+                       batch_size=10000, cancel_event=None):
+    col_sql = ", ".join(f"[{c}]" for c in cols)
+    where_clause, filter_params = build_where_clause(filters)
+    all_rows, offset = [], 0
+    while True:
+        if cancel_event and cancel_event.is_set():
+            raise Exception("Job cancelled by user")
+        actual_batch = batch_size if limit >= 1000000 else min(batch_size, limit - offset)
+        if actual_batch <= 0:
+            break
+        sql = (
+            f"SELECT {col_sql} FROM [{schema}].[{table}]"
+            f" WHERE 1=1 {where_clause}"
+            f" ORDER BY (SELECT NULL)"
+            f" OFFSET {offset} ROWS FETCH NEXT {actual_batch} ROWS ONLY"
+        )
+        cur.execute(sql, filter_params)
+        batch_rows = cur.fetchall()
+        if not batch_rows:
+            break
+        all_rows.extend([dict(zip(cols, row)) for row in batch_rows])
+        offset += len(batch_rows)
+        if len(batch_rows) < actual_batch or (limit < 1000000 and offset >= limit):
+            break
+    print(f"Fetched {len(all_rows)} rows from [{schema}].[{table}]")
+    return all_rows
 
 # ================= DB HELPERS =================
 
@@ -216,7 +616,6 @@ def save_results_batch(job_id, results_batch):
 def get_results_page(job_id, page=1, page_size=100, status_filter=None, field_filter=None):
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
-
     offset = (page - 1) * page_size
     params = [job_id]
     where_extra = ""
@@ -226,27 +625,23 @@ def get_results_page(job_id, page=1, page_size=100, status_filter=None, field_fi
     if field_filter:
         where_extra += " AND field = ?"
         params.append(field_filter)
-
     cur.execute(
         f"SELECT key_value, field, source_value, target_value, status "
         f"FROM execution_results WHERE job_id = ?{where_extra} LIMIT ? OFFSET ?",
         params + [page_size, offset]
     )
     rows = cur.fetchall()
-
     count_params = [job_id]
     if status_filter:
         count_params.append(status_filter)
     if field_filter:
         count_params.append(field_filter)
-
     cur.execute(
         f"SELECT COUNT(*) FROM execution_results WHERE job_id = ?{where_extra}",
         count_params
     )
     total = cur.fetchone()[0]
     conn.close()
-
     return {
         "results": [
             {"key": r[0], "field": r[1], "source": r[2], "target": r[3], "status": r[4]}
@@ -275,7 +670,6 @@ def load_history():
     """)
     rows = cur.fetchall()
     conn.close()
-
     return [
         {
             "jobId": r[0], "testCase": r[1], "date": r[2], "status": r[3],
@@ -291,120 +685,20 @@ def load_history():
         for r in rows
     ]
 
-# ================= CONFIG =================
-
-class DBConfig(BaseModel):
-    host: str
-    database: str
-    username: str
-    password: str
-    port: int = 1433
-
-# ================= DB CONNECTION =================
-
-def get_connection(cfg: DBConfig):
-    server = cfg.host if "\\" in cfg.host else f"{cfg.host},{cfg.port}"
-    conn_str = (
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        f"SERVER={server};DATABASE={cfg.database};"
-        f"UID={cfg.username};PWD={cfg.password};"
-        "TrustServerCertificate=yes;"
-    )
-    return pyodbc.connect(conn_str)
-
-# ================= SQL FILTER BUILDER =================
-
-def build_where_clause(filters, col_prefix=""):
-    if not filters:
-        return "", []
-
-    conditions, params = [], []
-
-    for f in filters:
-        field    = f.get("field")
-        operator = f.get("operator")
-        value    = f.get("value")
-        if not field:
-            continue
-
-        col      = f"[{field}]" if not col_prefix else f"{col_prefix}.[{field}]"
-        safe_col = f"TRY_CONVERT(NVARCHAR(500), {col})"
-        val_is_null = (value is None or str(value).strip().lower() in ("null", ""))
-
-        if val_is_null:
-            if operator in ("equals", ""):
-                conditions.append(f"{col} IS NULL")
-            elif operator == "not_equals":
-                conditions.append(f"{col} IS NOT NULL")
-            continue
-
-        if operator == "equals":
-            conditions.append(f"{safe_col} = ?");        params.append(str(value))
-        elif operator == "not_equals":
-            conditions.append(f"({safe_col} != ? OR {col} IS NULL)"); params.append(str(value))
-        elif operator == "contains":
-            conditions.append(f"{safe_col} LIKE ?");     params.append(f"%{value}%")
-        elif operator == "starts_with":
-            conditions.append(f"{safe_col} LIKE ?");     params.append(f"{value}%")
-        elif operator == "greater_than":
-            conditions.append(f"{col} > ?");             params.append(value)
-        elif operator == "less_than":
-            conditions.append(f"{col} < ?");             params.append(value)
-
-    return (" AND " + " AND ".join(conditions), params) if conditions else ("", [])
-
-# ================= SAFE LIMIT =================
-
-def safe_limit(v):
-    try:
-        v = int(v)
-        return 1000000 if v <= 0 else min(v, 100000)
-    except:
-        return 100
-
-# ================= BATCH FETCH =================
-
-def fetch_with_filters(cur, schema, table, cols, limit, filters=None,
-                       batch_size=10000, cancel_event=None):
-    col_sql = ", ".join(f"[{c}]" for c in cols)
-    where_clause, filter_params = build_where_clause(filters)
-    all_rows, offset = [], 0
-
-    while True:
-        if cancel_event and cancel_event.is_set():
-            raise Exception("Job cancelled by user")
-
-        actual_batch = batch_size if limit >= 1000000 else min(batch_size, limit - offset)
-        if actual_batch <= 0:
-            break
-
-        sql = (
-            f"SELECT {col_sql} FROM [{schema}].[{table}]"
-            f" WHERE 1=1 {where_clause}"
-            f" ORDER BY (SELECT NULL)"
-            f" OFFSET {offset} ROWS FETCH NEXT {actual_batch} ROWS ONLY"
-        )
-        cur.execute(sql, filter_params)
-        batch_rows = cur.fetchall()
-        if not batch_rows:
-            break
-
-        all_rows.extend([dict(zip(cols, row)) for row in batch_rows])
-        offset += len(batch_rows)
-
-        if len(batch_rows) < actual_batch or (limit < 1000000 and offset >= limit):
-            break
-
-    print(f"Fetched {len(all_rows)} rows from [{schema}].[{table}]")
-    return all_rows
-
-# ================= HEALTH =================
+# ================= ENDPOINTS =================
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "9.1"}
-
-# ================= CONNECT =================
+    return {"status": "ok", "version": "9.2-BR", "businessRules": [
+        "address_normalized_strict",   # Strip suite suffix + expand abbrevs + case-insensitive
+        "address2_suite_ignored",      # NEW: null src vs STE/UNIT target => MATCHED
+        "address_component",           # Strict component match
+        "first_name_with_initial",     # Handles embedded middle initial + flexible names
+        "numeric_flexible",            # Phone, IDs, numbers -- strips punctuation
+        "boolean_match",               # Auto-detects Y/N, true/false, 1/0
+        "exact",                       # Exact string match
+        "string_normalized"            # Case-insensitive exact match
+    ]}
 
 @app.post("/db/connect")
 def connect(cfg: DBConfig):
@@ -413,8 +707,6 @@ def connect(cfg: DBConfig):
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-# ================= TABLES =================
 
 @app.post("/db/tables")
 def tables(cfg: DBConfig):
@@ -432,8 +724,6 @@ def tables(cfg: DBConfig):
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-# ================= COLUMNS =================
 
 @app.post("/db/columns")
 def columns(req: Dict[str, Any]):
@@ -453,8 +743,6 @@ def columns(req: Dict[str, Any]):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ================= ROW COUNT =================
-
 @app.post("/db/rowcount")
 def rowcount(req: Dict[str, Any]):
     try:
@@ -468,15 +756,25 @@ def rowcount(req: Dict[str, Any]):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ================= SHARE ENDPOINT (NEW) =================
+@app.post("/db/preview")
+def preview_table(req: Dict[str, Any]):
+    try:
+        cfg    = DBConfig(**req["config"])
+        schema = req["schema"]
+        table  = req["table"]
+        limit  = int(req.get("limit", 20))
+        conn   = get_connection(cfg)
+        cur    = conn.cursor()
+        cur.execute(f"SELECT TOP {limit} * FROM [{schema}].[{table}]")
+        cols = [col[0] for col in cur.description]
+        rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        conn.close()
+        return {"columns": cols, "rows": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/db/share/{job_id}")
 def share_job(job_id: str):
-    """
-    Public read-only endpoint that returns full metadata for a single execution.
-    Used by the shareable URL feature: etl_history_viewer.html?job=<job_id>
-    No authentication required — intentionally public/read-only.
-    """
     conn = sqlite3.connect(DB_FILE)
     cur  = conn.cursor()
     cur.execute("""
@@ -487,43 +785,29 @@ def share_job(job_id: str):
                source_duplicates, target_duplicates,
                src_row_count, tgt_row_count,
                keys_in_both, keys_src_only, keys_tgt_only
-        FROM execution_history
-        WHERE job_id = ?
+        FROM execution_history WHERE job_id = ?
     """, [job_id])
     row = cur.fetchone()
     conn.close()
-
     if not row:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
-
     return {
-        "jobId":            row[0],
-        "testCase":         row[1],
-        "date":             row[2],
-        "status":           row[3],
-        "accuracy":         row[4],
-        "keyMatchRate":     row[5],
-        "fieldAccuracy":    row[6],
-        "totalRecords":     row[7],
-        "matched":          row[8],
-        "mismatched":       row[9],
-        "sourceOnly":       row[10],
-        "targetOnly":       row[11],
-        "nullMismatches":   row[12],
-        "sourceDuplicates": row[13],
-        "targetDuplicates": row[14],
-        "srcRowCount":      row[15],
-        "tgtRowCount":      row[16],
-        "keysInBoth":       row[17] or 0,
-        "keysSrcOnly":      row[18] or 0,
-        "keysTgtOnly":      row[19] or 0,
+        "jobId":            row[0],  "testCase":         row[1],
+        "date":             row[2],  "status":           row[3],
+        "accuracy":         row[4],  "keyMatchRate":     row[5],
+        "fieldAccuracy":    row[6],  "totalRecords":     row[7],
+        "matched":          row[8],  "mismatched":       row[9],
+        "sourceOnly":       row[10], "targetOnly":       row[11],
+        "nullMismatches":   row[12], "sourceDuplicates": row[13],
+        "targetDuplicates": row[14], "srcRowCount":      row[15],
+        "tgtRowCount":      row[16], "keysInBoth":       row[17] or 0,
+        "keysSrcOnly":      row[18] or 0, "keysTgtOnly": row[19] or 0,
     }
 
-# ================= COMPARE =================
+# ================= MAIN COMPARE ENDPOINT =================
 
 @app.post("/db/compare")
 def compare(req: Dict[str, Any]):
-
     key_map   = req.get("keyMappings", [])
     field_map = req.get("fieldMappings", req.get("comparisonRules", []))
     filters   = req.get("filters", [])
@@ -540,7 +824,6 @@ def compare(req: Dict[str, Any]):
         if signature in execution_signatures:
             return {"error": "Duplicate execution detected. Please wait for current execution to finish."}
         execution_signatures.add(signature)
-
         job_id = str(uuid.uuid4())
         cancel_ev = Event()
         cancel_events[job_id] = cancel_ev
@@ -557,43 +840,33 @@ def compare(req: Dict[str, Any]):
                 raise Exception(f"Job timed out after {TIMEOUT_SECONDS}s")
 
         try:
-            print(f"\n=== ETL START | JOB {job_id} ===")
-
+            print(f"\n=== ETL START (v9.2-BR) | JOB {job_id} ===")
             src_cfg = DBConfig(**req["srcConfig"])
             tgt_cfg = DBConfig(**req["tgtConfig"])
             limit   = safe_limit(req.get("limit", 100))
-
             src_conn = get_connection(src_cfg)
             tgt_conn = get_connection(tgt_cfg)
             src_cur  = src_conn.cursor()
             tgt_cur  = tgt_conn.cursor()
-
             src_cols = list({x.get("src") for x in (key_map + field_map) if x.get("src")})
             tgt_cols = list({x.get("tgt") for x in (key_map + field_map) if x.get("tgt")})
             if not src_cols or not tgt_cols:
                 raise Exception("No valid columns selected")
-
             with lock: jobs[job_id]["progress"] = 10
             check_cancel()
-
-            # Row counts
             src_where, src_params = build_where_clause(src_filters)
             tgt_where, tgt_params = build_where_clause(tgt_filters)
             src_cur.execute(f"SELECT COUNT(*) FROM [{req['srcTable']['schema']}].[{req['srcTable']['name']}] WHERE 1=1 {src_where}", src_params)
             src_row_count = src_cur.fetchone()[0]
             tgt_cur.execute(f"SELECT COUNT(*) FROM [{req['tgtTable']['schema']}].[{req['tgtTable']['name']}] WHERE 1=1 {tgt_where}", tgt_params)
             tgt_row_count = tgt_cur.fetchone()[0]
-
             with lock: jobs[job_id]["progress"] = 20
             check_cancel()
-
             src_rows = fetch_with_filters(src_cur, req["srcTable"]["schema"], req["srcTable"]["name"], src_cols, limit, src_filters, cancel_event=cancel_ev)
             with lock: jobs[job_id]["progress"] = 40
             check_cancel()
-
             tgt_rows = fetch_with_filters(tgt_cur, req["tgtTable"]["schema"], req["tgtTable"]["name"], tgt_cols, limit, tgt_filters, cancel_event=cancel_ev)
             src_conn.close(); tgt_conn.close()
-
             with lock: jobs[job_id]["progress"] = 60
             check_cancel()
 
@@ -601,7 +874,6 @@ def compare(req: Dict[str, Any]):
                 if not mappings: return ("NO_KEY",)
                 return tuple(row.get(m.get(side)) for m in mappings)
 
-            # Build lookups
             tgt_lookup, tgt_dup_keys = {}, set()
             for r in tgt_rows:
                 k = build_key(r, key_map, "tgt")
@@ -620,13 +892,11 @@ def compare(req: Dict[str, Any]):
             target_only_count = null_mismatch_count = 0
             source_dup_count  = target_dup_count    = 0
             keys_in_both = keys_src_only = 0
-
-            total_src     = len(src_rows)
+            total_src = len(src_rows)
             processed_keys = set()
 
             for idx, s in enumerate(src_rows):
                 check_cancel()
-
                 key = build_key(s, key_map, "src")
                 processed_keys.add(key)
                 t   = tgt_lookup.get(key)
@@ -653,38 +923,22 @@ def compare(req: Dict[str, Any]):
                 keys_in_both += 1
 
                 for f in field_map:
-                    sv   = s.get(f.get("src"))
-                    tv   = t.get(f.get("tgt"))
-                    rule = f.get("rule", "exact")
-
-                    if sv is None and tv is None:
-                        status = "MATCHED"
-                    elif sv is None or tv is None:
-                        status = "NULL_MISMATCH"
-                    else:
-                        if rule == "exact":
-                            ok = str(sv).strip() == str(tv).strip()
-                        elif rule == "string_normalized":
-                            ok = str(sv).strip().lower() == str(tv).strip().lower()
-                        elif rule == "numeric_tolerance":
-                            try:    ok = abs(float(sv) - float(tv)) <= 0.01
-                            except: ok = False
-                        else:
-                            ok = str(sv).strip() == str(tv).strip()
-                        status = "MATCHED" if ok else "MISMATCH"
-
+                    src_col = f.get("src")
+                    tgt_col = f.get("tgt")
+                    rule    = f.get("rule", "exact")
+                    sv      = s.get(src_col)
+                    tv      = t.get(tgt_col)
+                    status  = compare_field_values(sv, tv, src_col, rule)
                     results_batch.append({
                         "key":    str(key),
-                        "field":  f.get("src"),
+                        "field":  src_col,
                         "source": str(sv) if sv is not None else "NULL",
                         "target": str(tv) if tv is not None else "NULL",
                         "status": status
                     })
-
-                    if status == "MATCHED":          matched_count     += 1
-                    elif status == "MISMATCH":        mismatch_count    += 1
-                    elif status == "NULL_MISMATCH":   null_mismatch_count += 1
-
+                    if status == "MATCHED":        matched_count       += 1
+                    elif status == "MISMATCH":     mismatch_count      += 1
+                    elif status == "NULL_MISMATCH":null_mismatch_count += 1
                     if len(results_batch) >= BATCH: save_results_batch(job_id, results_batch); results_batch = []
 
                 with lock:
@@ -705,18 +959,14 @@ def compare(req: Dict[str, Any]):
             if results_batch:
                 save_results_batch(job_id, results_batch)
 
-            total_keys = keys_in_both + keys_src_only + keys_tgt_only
+            total_keys     = keys_in_both + keys_src_only + keys_tgt_only
             key_match_rate = round((keys_in_both / total_keys) * 100, 2) if total_keys else 0
-
             field_total    = matched_count + mismatch_count + null_mismatch_count
             field_accuracy = round((matched_count / field_total) * 100, 2) if field_total else 0
-
-            accuracy = field_accuracy
-
-            total_count = (matched_count + mismatch_count + source_only_count +
-                           target_only_count + null_mismatch_count +
-                           source_dup_count  + target_dup_count)
-
+            accuracy       = field_accuracy
+            total_count    = (matched_count + mismatch_count + source_only_count +
+                              target_only_count + null_mismatch_count +
+                              source_dup_count  + target_dup_count)
             stats = {
                 "total":             total_count,
                 "matched":           matched_count,
@@ -735,25 +985,20 @@ def compare(req: Dict[str, Any]):
                 "keys_src_only":     keys_src_only,
                 "keys_tgt_only":     keys_tgt_only,
             }
-
             save_to_history(job_id, req.get("testCaseNo", "N/A"), "COMPLETED", accuracy, stats)
-
             with lock:
                 jobs[job_id]["status"]   = "COMPLETED"
                 jobs[job_id]["progress"] = 100
                 jobs[job_id]["stats"]    = stats
                 execution_signatures.discard(signature)
                 cancel_events.pop(job_id, None)
-
-            print(f"=== ETL DONE | key_match={key_match_rate}% field_acc={field_accuracy}% ===")
+            print(f"=== ETL DONE (v9.2-BR) | kmr={key_match_rate}% acc={field_accuracy}% ===\n")
 
         except Exception as e:
             is_cancel = "cancelled" in str(e).lower()
             print(f"\n=== ETL {'CANCELLED' if is_cancel else 'ERROR'} ===\n{traceback.format_exc()}")
             final_status = "CANCELLED" if is_cancel else "FAILED"
-
             save_to_history(job_id, req.get("testCaseNo", "N/A"), final_status, 0, {})
-
             with lock:
                 execution_signatures.discard(signature)
                 cancel_events.pop(job_id, None)
@@ -764,8 +1009,6 @@ def compare(req: Dict[str, Any]):
     t = Thread(target=worker, daemon=True)
     t.start()
     return {"jobId": job_id}
-
-# ================= JOB STATUS =================
 
 @app.get("/db/job/{job_id}")
 def job_status(job_id: str):
@@ -782,8 +1025,6 @@ def job_status(job_id: str):
         "stats":    job_data.get("stats"),
     }
 
-# ================= CANCEL ENDPOINT =================
-
 @app.post("/db/job/{job_id}/cancel")
 def cancel_job(job_id: str):
     ev = cancel_events.get(job_id)
@@ -798,8 +1039,6 @@ def cancel_job(job_id: str):
         return {"success": False, "message": f"Job already {job_data['status']}"}
     return {"success": False, "message": "Job not found or already finished"}
 
-# ================= RESULTS (PAGINATED) =================
-
 @app.get("/db/results/{job_id}")
 def get_results(
     job_id:   str,
@@ -813,14 +1052,11 @@ def get_results(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ================= FIELD SUMMARY =================
-
 @app.get("/db/field-summary/{job_id}")
 def field_summary(job_id: str):
     try:
         conn = sqlite3.connect(DB_FILE)
         cur  = conn.cursor()
-
         cur.execute("""
             SELECT
                 field,
@@ -834,10 +1070,8 @@ def field_summary(job_id: str):
             GROUP BY field
             ORDER BY mismatched DESC, null_mismatch DESC
         """, [job_id])
-
         rows = cur.fetchall()
         conn.close()
-
         summary = []
         for row in rows:
             field, matched, mismatched, null_mismatch, total = row
@@ -851,19 +1085,13 @@ def field_summary(job_id: str):
                 "total":        total,
                 "accuracy":     accuracy
             })
-
         return {"summary": summary}
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-# ================= HISTORY =================
 
 @app.get("/db/history")
 def history():
     return load_history()
-
-# ================= DOWNLOAD =================
 
 @app.post("/db/download")
 def download(req: Dict[str, Any]):
@@ -871,7 +1099,6 @@ def download(req: Dict[str, Any]):
         job_id = req.get("jobId")
         if not job_id:
             raise Exception("Job ID required")
-
         conn = sqlite3.connect(DB_FILE)
         cur  = conn.cursor()
         cur.execute("""
@@ -880,14 +1107,11 @@ def download(req: Dict[str, Any]):
         """, [job_id])
         rows = cur.fetchall()
         conn.close()
-
         if not rows:
             raise Exception("No results found for this job ID")
-
         df   = pd.DataFrame(rows, columns=["key","field","source","target","status"])
         file = f"outputs/{uuid.uuid4()}.csv"
         df.to_csv(file, index=False)
-
         return FileResponse(file, media_type="text/csv",
                             filename=f"etl_results_{job_id[:8]}.csv")
     except Exception as e:

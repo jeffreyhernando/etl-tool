@@ -116,7 +116,7 @@ th{background:#1e2d45}
 
 <header>
 ETL TEST AUTOMATION TOOL
-<span class="version-badge">v9.1</span>
+<span class="version-badge">v9.2</span>
 </header>
 
 <div class="toast" id="toast"></div>
@@ -148,8 +148,8 @@ ETL TEST AUTOMATION TOOL
     <h3>🔵 Source Database
       <span id="srcTestIndicator" class="test-indicator" style="display:none"></span>
     </h3>
-    <div class="field-row"><label>Host / Server</label><input id="src-host" type="text" placeholder="e.g. DEV-SSIS01"></div>
-    <div class="field-row"><label>Database</label><input id="src-db" type="text" placeholder="e.g. ProvConv_CNAIME"></div>
+    <div class="field-row"><label>Host / Server</label><input id="src-host" type="text"></div>
+    <div class="field-row"><label>Database</label><input id="src-db" type="text"></div>
     <div class="field-row"><label>Username</label><input id="src-user" type="text" placeholder="Username"></div>
     <div class="field-row"><label>Password</label><input id="src-pass" type="password" placeholder="Password"></div>
     <div style="margin-top:8px"><button class="btn-secondary" onclick="testConnection('src')" id="testSrcBtn">🔌 Test Connection</button></div>
@@ -158,8 +158,8 @@ ETL TEST AUTOMATION TOOL
     <h3>🟢 Target Database
       <span id="tgtTestIndicator" class="test-indicator" style="display:none"></span>
     </h3>
-    <div class="field-row"><label>Host / Server</label><input id="tgt-host" type="text" placeholder="e.g. DEV-SQL02"></div>
-    <div class="field-row"><label>Database</label><input id="tgt-db" type="text" placeholder="e.g. ProvStage_WrapNetworks_Master_CNAIME"></div>
+    <div class="field-row"><label>Host / Server</label><input id="tgt-host" type="text"></div>
+    <div class="field-row"><label>Database</label><input id="tgt-db" type="text"></div>
     <div class="field-row"><label>Username</label><input id="tgt-user" type="text" placeholder="Username"></div>
     <div class="field-row"><label>Password</label><input id="tgt-pass" type="password" placeholder="Password"></div>
     <div style="margin-top:8px"><button class="btn-secondary" onclick="testConnection('tgt')" id="testTgtBtn">🔌 Test Connection</button></div>
@@ -204,6 +204,34 @@ ETL TEST AUTOMATION TOOL
 <!-- STEP 4 -->
 <div id="step4" class="panel">
 <h2>Key Mapping</h2>
+
+<div style="margin-bottom:16px">
+  <button class="btn-secondary" onclick="showTablePreview()">🔍 Preview Top 20 Rows</button>
+</div>
+
+<div id="previewPanel" style="display:none;margin-bottom:24px">
+  <div style="margin-bottom:18px">
+    <h4 style="color:#60a5fa;margin-bottom:8px;font-size:13px">
+      🔵 Source: <span id="previewSrcLabel" style="color:#e8f0fe"></span>
+    </h4>
+    <div id="previewSrcTable"
+         style="border:1px solid #1e2d45;border-radius:4px;
+                scrollbar-width:thin;scrollbar-color:#2a3f5f #0d1a2e">
+    </div>
+  </div>
+  <div style="margin-bottom:12px">
+    <h4 style="color:#4ade80;margin-bottom:8px;font-size:13px">
+      🟢 Target: <span id="previewTgtLabel" style="color:#e8f0fe"></span>
+    </h4>
+    <div id="previewTgtTable"
+         style="border:1px solid #1e2d45;border-radius:4px;
+                scrollbar-width:thin;scrollbar-color:#2a3f5f #0d1a2e">
+    </div>
+  </div>
+  <button class="btn-secondary" style="margin-top:6px;font-size:12px"
+          onclick="document.getElementById('previewPanel').style.display='none'">✕ Close Preview</button>
+</div>
+
 <table>
   <thead><tr><th>Source</th><th>Target</th></tr></thead>
   <tbody id="keys"></tbody>
@@ -224,13 +252,14 @@ ETL TEST AUTOMATION TOOL
 
 <!-- STEP 5 -->
 <div id="step5" class="panel">
-<h2>Comparison Rules</h2>
+<h2>Comparison Rules <span style="font-size:12px;color:#00d4ff;margin-left:10px;background:#0d2040;padding:2px 8px;border-radius:3px">v9.2-BR</span></h2>
 <div class="control-buttons" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-  <span style="font-size:12px;color:#7a8fa8">Set all fields to:</span>
+  <span style="font-size:12px;color:#7a8fa8">Quick apply:</span>
+  <button class="btn-secondary" onclick="setAllRules('address_normalized_strict')" style="padding:5px 12px;font-size:12px;margin:0">🏘️ Addresses</button>
+  <button class="btn-secondary" onclick="setAllRules('first_name_with_initial')" style="padding:5px 12px;font-size:12px;margin:0">👤 Names</button>
+  <button class="btn-secondary" onclick="setAllRules('numeric_flexible')" style="padding:5px 12px;font-size:12px;margin:0">☎️ Phone/Numbers</button>
   <button class="btn-secondary" onclick="setAllRules('exact')" style="padding:5px 12px;font-size:12px;margin:0">Exact Match</button>
-  <button class="btn-secondary" onclick="setAllRules('string_normalized')" style="padding:5px 12px;font-size:12px;margin:0">String Normalized</button>
-  <button class="btn-secondary" onclick="setAllRules('numeric_tolerance')" style="padding:5px 12px;font-size:12px;margin:0">Numeric Tolerance</button>
-  <span style="font-size:11px;color:#4b6280;margin-left:8px">&#128161; String Normalized = case-insensitive &middot; trims whitespace</span>
+  <span style="font-size:11px;color:#4b6280;margin-left:8px">💡 Boolean fields are automatically detected</span>
 </div>
 <table>
   <thead><tr><th>Source</th><th>Target</th><th>Rule</th></tr></thead>
@@ -404,29 +433,30 @@ let state = {
   fieldMappings:[], filters:[]
 };
 
-function showToast(msg, duration = 2200) {
+function showToast(msg, duration) {
+  duration = duration || 2200;
   const t = $('toast');
   t.innerText = msg;
   t.classList.add("show");
-  setTimeout(() => t.classList.remove("show"), duration);
+  setTimeout(function(){ t.classList.remove("show"); }, duration);
 }
 
 function buildHistoryShareUrl(jobId) {
   const base = window.location.href.split("?")[0].replace("index.html", "");
-  return `${base}etl_history_viewer.html?job=${jobId}`;
+  return base + "etl_history_viewer.html?job=" + jobId;
 }
 function copyShareLink(jobId) {
   const url = buildHistoryShareUrl(jobId);
   navigator.clipboard.writeText(url)
-    .then(() => showToast("✓ Share link copied to clipboard!"))
-    .catch(() => { prompt("Copy this link:", url); });
+    .then(function(){ showToast("✓ Share link copied to clipboard!"); })
+    .catch(function(){ prompt("Copy this link:", url); });
 }
 function copyCurrentJobShareLink() {
   if (!currentJobId) return;
   copyShareLink(currentJobId);
 }
 
-/* ── PROFILES ── */
+/* PROFILES */
 const PROFILE_KEY   = "etl_profiles";
 const PASS_XOR_SEED = "ETL_V9";
 function xorObfuscate(str, seed) {
@@ -441,16 +471,16 @@ function xorDeobfuscate(encoded, seed) {
     const str = atob(encoded); let r = "";
     for (let i = 0; i < str.length; i++) r += String.fromCharCode(str.charCodeAt(i) ^ seed.charCodeAt(i % seed.length));
     return r;
-  } catch { return ""; }
+  } catch(e) { return ""; }
 }
-function getProfiles() { try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { return {}; } }
+function getProfiles() { try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch(e) { return {}; } }
 function saveProfiles(p) { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); }
 function refreshProfileDropdown() {
   const profiles = getProfiles();
   const sel = $('profileSelect');
   const current = sel.value;
   sel.innerHTML = '<option value="">— Select a saved profile —</option>';
-  Object.keys(profiles).sort().forEach(name => {
+  Object.keys(profiles).sort().forEach(function(name) {
     const opt = document.createElement("option");
     opt.value = name; opt.textContent = name;
     if (name === current) opt.selected = true;
@@ -470,8 +500,8 @@ function loadProfile(name) {
   $('rememberConn').checked = true;
   $('profileNameInput').value = name;
   clearTestIndicators();
-  $('connectStatus').innerText = `✔ Profile "${name}" loaded`;
-  setTimeout(() => { $('connectStatus').innerText = ""; }, 2500);
+  $('connectStatus').innerText = '✔ Profile "' + name + '" loaded';
+  setTimeout(function(){ $('connectStatus').innerText = ""; }, 2500);
 }
 function saveProfile() {
   const name = $('profileNameInput').value.trim();
@@ -480,198 +510,313 @@ function saveProfile() {
   if ($('rememberPass').checked) { profile.srcPassEnc = xorObfuscate($('src-pass').value, PASS_XOR_SEED); profile.tgtPassEnc = xorObfuscate($('tgt-pass').value, PASS_XOR_SEED); }
   const profiles = getProfiles(); profiles[name] = profile; saveProfiles(profiles);
   refreshProfileDropdown(); $('profileSelect').value = name; $('deleteProfileBtn').disabled = false;
-  $('connectStatus').innerText = `✔ Profile "${name}" saved`;
-  setTimeout(() => { $('connectStatus').innerText = ""; }, 2500);
+  $('connectStatus').innerText = '✔ Profile "' + name + '" saved';
+  setTimeout(function(){ $('connectStatus').innerText = ""; }, 2500);
 }
 function deleteProfile() {
   const name = $('profileSelect').value;
-  if (!name || !confirm(`Delete profile "${name}"?`)) return;
+  if (!name || !confirm('Delete profile "' + name + '"?')) return;
   const profiles = getProfiles(); delete profiles[name]; saveProfiles(profiles);
   refreshProfileDropdown();
-  $('connectStatus').innerText = `🗑 Profile "${name}" deleted`;
-  setTimeout(() => { $('connectStatus').innerText = ""; }, 2500);
+  $('connectStatus').innerText = '🗑 Profile "' + name + '" deleted';
+  setTimeout(function(){ $('connectStatus').innerText = ""; }, 2500);
 }
 function clearTestIndicators() {
-  ['srcTestIndicator','tgtTestIndicator'].forEach(id => { const el=$(id); el.style.display="none"; el.className="test-indicator"; el.innerText=""; });
+  ['srcTestIndicator','tgtTestIndicator'].forEach(function(id) {
+    const el = $(id); el.style.display="none"; el.className="test-indicator"; el.innerText="";
+  });
 }
-function setTestIndicator(side, state, msg) {
-  const el = $(`${side}TestIndicator`);
+function setTestIndicator(side, st, msg) {
+  const el = $(side + 'TestIndicator');
   el.style.display = "inline-flex";
-  el.className = "test-indicator " + (state==="ok"?"test-ok":state==="fail"?"test-fail":"test-testing");
+  el.className = "test-indicator " + (st==="ok" ? "test-ok" : st==="fail" ? "test-fail" : "test-testing");
   el.innerText = msg;
 }
 async function testConnection(side) {
   const cfg = { host:$(side+'-host').value, database:$(side+'-db').value, username:$(side+'-user').value, password:$(side+'-pass').value, port:1433 };
   if (!cfg.host||!cfg.database||!cfg.username) { alert("Fill in host, database and username first."); return; }
-  const btn = $(side==='src'?'testSrcBtn':'testTgtBtn');
-  btn.disabled = true; setTestIndicator(side,"testing","⟳ Testing…");
+  const btn = $(side==='src' ? 'testSrcBtn' : 'testTgtBtn');
+  btn.disabled = true; setTestIndicator(side, "testing", "⟳ Testing…");
   try {
     const res = await fetch(API+"/db/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)});
     const data = await res.json();
-    setTestIndicator(side, data.success?"ok":"fail", data.success?"✓ Connected":"✗ Failed");
-  } catch(e) { setTestIndicator(side,"fail","✗ Unreachable"); }
+    setTestIndicator(side, data.success ? "ok" : "fail", data.success ? "✓ Connected" : "✗ Failed");
+  } catch(e) { setTestIndicator(side, "fail", "✗ Unreachable"); }
   finally { btn.disabled = false; }
 }
 
-/* ── NAV ── */
-function show(n){
-  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.sidebar div[id^="nav"]').forEach(d=>d.classList.remove('active'));
+/* NAV */
+function show(n) {
+  document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('active'); });
+  document.querySelectorAll('.sidebar div[id^="nav"]').forEach(function(d){ d.classList.remove('active'); });
   $('step'+n).classList.add('active');
-  if($('nav'+n)) $('nav'+n).classList.add('active');
+  if ($('nav'+n)) $('nav'+n).classList.add('active');
 }
 
-/* ── CONNECT ── */
-async function connectDatabases(){
+/* CONNECT */
+async function connectDatabases() {
   state.srcConfig={host:$('src-host').value,database:$('src-db').value,username:$('src-user').value,password:$('src-pass').value,port:1433};
   state.tgtConfig={host:$('tgt-host').value,database:$('tgt-db').value,username:$('tgt-user').value,password:$('tgt-pass').value,port:1433};
   $('connectError').style.display="none"; $('connectBtn').disabled=true; $('connectBtn').innerText="Connecting…";
-  try{
-    const [r1,r2]=await Promise.all([
+  try {
+    const [r1,r2] = await Promise.all([
       fetch(API+"/db/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(state.srcConfig)}),
       fetch(API+"/db/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(state.tgtConfig)})
     ]);
-    const [s,t]=await Promise.all([r1.json(),r2.json()]);
-    if(!s.success||!t.success){ $('connectError').style.display="block"; $('connectError').innerText="Connection failed: "+(s.error||t.error); return; }
-    if($('rememberConn').checked && $('profileNameInput').value.trim()) saveProfile();
+    const [s,t] = await Promise.all([r1.json(), r2.json()]);
+    if (!s.success||!t.success) { $('connectError').style.display="block"; $('connectError').innerText="Connection failed: "+(s.error||t.error); return; }
+    if ($('rememberConn').checked && $('profileNameInput').value.trim()) saveProfile();
     await loadTables(); show(2);
-  }catch(err){ $('connectError').style.display="block"; $('connectError').innerText=err.message; }
+  } catch(err) { $('connectError').style.display="block"; $('connectError').innerText=err.message; }
   finally { $('connectBtn').disabled=false; $('connectBtn').innerText="▶ Connect"; }
 }
 
-/* ── TABLES ── */
-async function loadTables(){
-  const [s,t]=await Promise.all([
+/* TABLES */
+async function loadTables() {
+  const [s,t] = await Promise.all([
     fetch(API+"/db/tables",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(state.srcConfig)}),
     fetch(API+"/db/tables",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(state.tgtConfig)})
   ]);
-  const [src,tgt]=await Promise.all([s.json(),t.json()]);
+  const [src,tgt] = await Promise.all([s.json(), t.json()]);
   $('srcTables').innerHTML=""; $('tgtTables').innerHTML="";
-  src.forEach(x=>{$('srcTables').innerHTML+=`<input type="radio" name="src" onclick='state.srcTable=${JSON.stringify(x)}'> ${x.schema}.${x.name}<br>`;});
-  tgt.forEach(x=>{$('tgtTables').innerHTML+=`<input type="radio" name="tgt" onclick='state.tgtTable=${JSON.stringify(x)}'> ${x.schema}.${x.name}<br>`;});
+  src.forEach(function(x){ $('srcTables').innerHTML += '<input type="radio" name="src" onclick=\'state.srcTable='+JSON.stringify(x)+'\'> '+x.schema+'.'+x.name+'<br>'; });
+  tgt.forEach(function(x){ $('tgtTables').innerHTML += '<input type="radio" name="tgt" onclick=\'state.tgtTable='+JSON.stringify(x)+'\'> '+x.schema+'.'+x.name+'<br>'; });
 }
 
-/* ── COLUMNS ── */
-function goColumns(){ if(!state.srcTable||!state.tgtTable){alert("Select tables first");return;} loadColumns(); show(3); }
-async function loadColumns(){
-  const [s,t]=await Promise.all([
+/* COLUMNS */
+function goColumns() { if(!state.srcTable||!state.tgtTable){alert("Select tables first");return;} loadColumns(); show(3); }
+async function loadColumns() {
+  const [s,t] = await Promise.all([
     fetch(API+"/db/columns",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({config:state.srcConfig,schema:state.srcTable.schema,table:state.srcTable.name})}),
     fetch(API+"/db/columns",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({config:state.tgtConfig,schema:state.tgtTable.schema,table:state.tgtTable.name})})
   ]);
   state.srcColumns=await s.json(); state.tgtColumns=await t.json();
   initializeColumnMappings(); renderColumnMappings();
 }
-function initializeColumnMappings(){
+function initializeColumnMappings() {
   state.columnMappings=[];
-  state.srcColumns.forEach(src=>{
-    let tgt=state.tgtColumns.find(t=>t.name.toLowerCase()===src.name.toLowerCase());
+  state.srcColumns.forEach(function(src){
+    let tgt=state.tgtColumns.find(function(t){ return t.name.toLowerCase()===src.name.toLowerCase(); });
     state.columnMappings.push({srcCol:src.name,tgtCol:tgt?tgt.name:"",enabled:!!tgt});
   });
 }
-function renderColumnMappings(){
+function renderColumnMappings() {
   $('columnMappings').innerHTML="";
-  state.columnMappings.forEach((m,idx)=>{
+  state.columnMappings.forEach(function(m,idx){
     const row=document.createElement("div"); row.className="mapping-row";
-    row.innerHTML=`<input type="checkbox" ${m.enabled?"checked":""} onchange="state.columnMappings[${idx}].enabled=this.checked">
-      <div>${m.srcCol}</div><div class="mapping-arrow">→</div>
-      <select onchange="state.columnMappings[${idx}].tgtCol=this.value;state.columnMappings[${idx}].enabled=!!this.value">
-        <option value="">-- Select --</option>
-        ${state.tgtColumns.map(t=>`<option value="${t.name}" ${m.tgtCol===t.name?"selected":""}>${t.name}</option>`).join("")}
-      </select>`;
+    row.innerHTML='<input type="checkbox" '+(m.enabled?"checked":"")+' onchange="state.columnMappings['+idx+'].enabled=this.checked">'
+      +'<div>'+m.srcCol+'</div><div class="mapping-arrow">→</div>'
+      +'<select onchange="state.columnMappings['+idx+'].tgtCol=this.value;state.columnMappings['+idx+'].enabled=!!this.value">'
+      +'<option value="">-- Select --</option>'
+      +state.tgtColumns.map(function(t){ return '<option value="'+t.name+'" '+(m.tgtCol===t.name?"selected":"")+'>'+t.name+'</option>'; }).join("")
+      +'</select>';
     $('columnMappings').appendChild(row);
   });
 }
-function selectAllColumns(){state.columnMappings.forEach(m=>{if(m.tgtCol)m.enabled=true;});renderColumnMappings();}
-function deselectAllColumns(){state.columnMappings.forEach(m=>m.enabled=false);renderColumnMappings();}
+function selectAllColumns(){state.columnMappings.forEach(function(m){if(m.tgtCol)m.enabled=true;});renderColumnMappings();}
+function deselectAllColumns(){state.columnMappings.forEach(function(m){m.enabled=false;});renderColumnMappings();}
 function autoMapColumns(){initializeColumnMappings();renderColumnMappings();alert("Auto map complete");}
 
-/* ── KEYS ── */
+/* KEYS */
 function validateAndGoToKeys(){loadKeys();show(4);}
-function loadKeys(){
+function loadKeys() {
   $('keys').innerHTML="";
-  state.srcColumns.forEach(src=>{
-    $('keys').innerHTML+=`<tr><td>${src.name}</td><td><select onchange="updateKeyMappings()" data-src="${src.name}">
-      <option value="">-- None --</option>
-      ${state.tgtColumns.map(t=>`<option value="${t.name}">${t.name}</option>`).join("")}
-    </select></td></tr>`;
+  state.srcColumns.forEach(function(src){
+    $('keys').innerHTML+='<tr><td>'+src.name+'</td><td><select onchange="updateKeyMappings()" data-src="'+src.name+'">'
+      +'<option value="">-- None --</option>'
+      +state.tgtColumns.map(function(t){ return '<option value="'+t.name+'">'+t.name+'</option>'; }).join("")
+      +'</select></td></tr>';
   });
   renderFilters();
 }
-function updateKeyMappings(){
+function updateKeyMappings() {
   state.keyMappings=[];
-  document.querySelectorAll('#keys select').forEach(sel=>{ if(sel.value) state.keyMappings.push({src:sel.dataset.src,tgt:sel.value}); });
+  document.querySelectorAll('#keys select').forEach(function(sel){ if(sel.value) state.keyMappings.push({src:sel.dataset.src,tgt:sel.value}); });
 }
 
-/* ── FILTERS ── */
+/* FILTERS */
 function addFilterRow(type){state.filters.push({side:type,field:"",operator:"equals",value:""});renderFilters();}
 function removeFilterRow(i){state.filters.splice(i,1);renderFilters();}
 function clearAllFilters(){state.filters=[];renderFilters();}
-function renderFilters(){
+function renderFilters() {
   const container=$('filterContainer'); container.innerHTML="";
-  state.filters.forEach((f,idx)=>{
+  state.filters.forEach(function(f,idx){
     const columns=f.side==="source"?state.srcColumns:state.tgtColumns;
     const row=document.createElement("div"); row.className="filter-grid";
-    row.innerHTML=`
-      <select onchange="state.filters[${idx}].side=this.value;renderFilters()">
-        <option value="source" ${f.side==="source"?"selected":""}>Source</option>
-        <option value="target" ${f.side==="target"?"selected":""}>Target</option>
-      </select>
-      <select onchange="state.filters[${idx}].field=this.value;refreshFilterPreview()">
-        <option value="">-- Field --</option>
-        ${columns.map(c=>`<option value="${c.name}" ${f.field===c.name?"selected":""}>${c.name}</option>`).join("")}
-      </select>
-      <select onchange="state.filters[${idx}].operator=this.value;refreshFilterPreview()">
-        <option value="equals">Equals</option><option value="not_equals">Not Equals</option>
-        <option value="contains">Contains</option><option value="starts_with">Starts With</option>
-        <option value="greater_than">Greater Than</option><option value="less_than">Less Than</option>
-        <option value="is_null">Is Null</option><option value="is_not_null">Is Not Null</option>
-      </select>
-      <input type="text" value="${f.value}" placeholder="Value"
-        oninput="state.filters[${idx}].value=this.value;refreshFilterPreview()"
-        ${["is_null","is_not_null"].includes(f.operator)?"disabled":""}>
-      <button class="btn-secondary" onclick="removeFilterRow(${idx})">X</button>`;
+    row.innerHTML=
+      '<select onchange="state.filters['+idx+'].side=this.value;renderFilters()">'
+        +'<option value="source" '+(f.side==="source"?"selected":"")+'>Source</option>'
+        +'<option value="target" '+(f.side==="target"?"selected":"")+'>Target</option>'
+      +'</select>'
+      +'<select onchange="state.filters['+idx+'].field=this.value;refreshFilterPreview()">'
+        +'<option value="">-- Field --</option>'
+        +columns.map(function(c){ return '<option value="'+c.name+'" '+(f.field===c.name?"selected":"")+'>'+c.name+'</option>'; }).join("")
+      +'</select>'
+      +'<select onchange="state.filters['+idx+'].operator=this.value;refreshFilterPreview()">'
+        +'<option value="equals">Equals</option><option value="not_equals">Not Equals</option>'
+        +'<option value="contains">Contains</option><option value="starts_with">Starts With</option>'
+        +'<option value="greater_than">Greater Than</option><option value="less_than">Less Than</option>'
+        +'<option value="is_null">Is Null</option><option value="is_not_null">Is Not Null</option>'
+      +'</select>'
+      +'<input type="text" value="'+f.value+'" placeholder="Value"'
+        +' oninput="state.filters['+idx+'].value=this.value;refreshFilterPreview()"'
+        +(["is_null","is_not_null"].includes(f.operator)?" disabled":"")+' >'
+      +'<button class="btn-secondary" onclick="removeFilterRow('+idx+')">X</button>';
     container.appendChild(row);
   });
   refreshFilterPreview();
 }
-function refreshFilterPreview(){
+function refreshFilterPreview() {
   const preview=$('filterPreview');
   if(!state.filters.length){preview.innerHTML="No filters applied";return;}
   const opText={equals:"=",not_equals:"≠",contains:"contains",starts_with:"starts with",greater_than:">",less_than:"<",is_null:"IS NULL",is_not_null:"IS NOT NULL"};
-  preview.innerHTML=state.filters.filter(f=>f.field&&(f.value||["is_null","is_not_null"].includes(f.operator)))
-    .map(f=>`<div>✓ ${f.side.toUpperCase()}: ${f.field} ${opText[f.operator]||f.operator} ${f.value?'"'+f.value+'"':""}</div>`).join("");
+  preview.innerHTML=state.filters.filter(function(f){return f.field&&(f.value||["is_null","is_not_null"].includes(f.operator));})
+    .map(function(f){ return '<div>✓ '+f.side.toUpperCase()+': '+f.field+' '+(opText[f.operator]||f.operator)+' '+(f.value?'"'+f.value+'"':"")+' </div>'; }).join("");
 }
-function showActiveFilters(){
+function showActiveFilters() {
   const container=$('activeFilters');
-  const af=state.filters.filter(f=>f.field&&(f.value||["is_null","is_not_null"].includes(f.operator)));
+  const af=state.filters.filter(function(f){return f.field&&(f.value||["is_null","is_not_null"].includes(f.operator));});
   if(!af.length){container.innerHTML="";return;}
   const opText={equals:"=",not_equals:"≠",contains:"contains",starts_with:"starts with",greater_than:">",less_than:"<",is_null:"IS NULL",is_not_null:"IS NOT NULL"};
-  container.innerHTML=af.map(f=>`<div class="filter-badge">${f.side.toUpperCase()}: ${f.field} ${opText[f.operator]||""} ${f.value?'"'+f.value+'"':""}</div>`).join("");
+  container.innerHTML=af.map(function(f){ return '<div class="filter-badge">'+f.side.toUpperCase()+': '+f.field+' '+(opText[f.operator]||"")+' '+(f.value?'"'+f.value+'"':"")+' </div>'; }).join("");
 }
 
-/* ── RULES ── */
+/* RULES */
 function validateKeysAndNext(){ if(!state.keyMappings.length){alert("Select at least one key");return;} loadComparisonRules(); show(5); }
-function loadComparisonRules(){
+function loadComparisonRules() {
   $('mapping').innerHTML="";
   const prevRules={};
-  state.fieldMappings.forEach(m=>{ prevRules[m.src]=m.rule; });
+  state.fieldMappings.forEach(function(m){ prevRules[m.src]=m.rule; });
   state.fieldMappings=[];
-  const filtered=state.columnMappings.filter(m=>m.enabled&&m.tgtCol);
-  filtered.forEach((m,idx)=>{
+  const filtered=state.columnMappings.filter(function(m){return m.enabled&&m.tgtCol;});
+  filtered.forEach(function(m,idx){
     const savedRule=prevRules[m.srcCol]||"exact";
     state.fieldMappings.push({src:m.srcCol,tgt:m.tgtCol,rule:savedRule});
-    const makeOptions=(selected)=>[
-      {v:"exact",l:"Exact Match"},{v:"string_normalized",l:"String Normalized"},{v:"numeric_tolerance",l:"Numeric Tolerance"}
-    ].map(o=>`<option value="${o.v}" ${selected===o.v?"selected":""}>${o.l}</option>`).join("");
-    $('mapping').innerHTML+=`<tr><td>${m.srcCol}</td><td>${m.tgtCol}</td><td>
-      <select onchange="state.fieldMappings[${idx}].rule=this.value">${makeOptions(savedRule)}</select>
-    </td></tr>`;
+    const groups=[
+      {g:"SMART RULES (Recommended)", opts:[
+        {v:"address_normalized_strict", l:"Address (Street) — strip suite/unit, normalize abbrev"},
+        {v:"address2_suite_ignored",    l:"Address Line 2 — null src vs STE/UNIT target = Match"},
+        {v:"first_name_with_initial",   l:"First Name with Initial (handles embedded initials)"},
+        {v:"numeric_flexible",          l:"Numeric Flexible (phone, ID, numbers - strips all punctuation)"},
+      ]},
+      {g:"AUTOMATIC", opts:[
+        {v:"boolean_match", l:"Boolean Match (automatic - detects Y/N, true/false, 1/0)"},
+      ]},
+      {g:"FALLBACK (Generic)", opts:[
+        {v:"exact",              l:"Exact Match (case-sensitive)"},
+        {v:"string_normalized",  l:"String Normalized (case-insensitive)"},
+      ]},
+    ];
+    const optHtml=groups.map(function(group){
+      return '<optgroup label="'+group.g+'">'
+        +group.opts.map(function(o){ return '<option value="'+o.v+'" '+(savedRule===o.v?"selected":"")+'>'+o.l+'</option>'; }).join("")
+        +'</optgroup>';
+    }).join("");
+    $('mapping').innerHTML+='<tr><td>'+m.srcCol+'</td><td>'+m.tgtCol+'</td><td>'
+      +'<select onchange="state.fieldMappings['+idx+'].rule=this.value">'+optHtml+'</select>'
+      +'</td></tr>';
   });
 }
-function setAllRules(rule){ state.fieldMappings.forEach(m=>{m.rule=rule;}); document.querySelectorAll('#mapping select').forEach(sel=>{sel.value=rule;}); }
+function setAllRules(rule){
+  state.fieldMappings.forEach(function(m){m.rule=rule;});
+  document.querySelectorAll('#mapping select').forEach(function(sel){sel.value=rule;});
+}
 
-/* ── RUN ── */
-async function runTest(){
+/* PREVIEW TABLE */
+async function showTablePreview() {
+  if (!state.srcTable || !state.tgtTable) { alert("Select tables first."); return; }
+  $('previewSrcLabel').innerText = state.srcTable.schema + '.' + state.srcTable.name;
+  $('previewTgtLabel').innerText = state.tgtTable.schema + '.' + state.tgtTable.name;
+  $('previewSrcTable').innerHTML = '<p style="padding:10px;color:#7a8fa8">Loading…</p>';
+  $('previewTgtTable').innerHTML = '<p style="padding:10px;color:#7a8fa8">Loading…</p>';
+  $('previewPanel').style.display = 'block';
+  try {
+    const [sr, tr] = await Promise.all([
+      fetch(API + "/db/preview", { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ config:state.srcConfig, schema:state.srcTable.schema, table:state.srcTable.name }) }),
+      fetch(API + "/db/preview", { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ config:state.tgtConfig, schema:state.tgtTable.schema, table:state.tgtTable.name }) })
+    ]);
+    const [sd, td] = await Promise.all([sr.json(), tr.json()]);
+    if (sd.detail) throw new Error(sd.detail);
+    if (td.detail) throw new Error(td.detail);
+    renderPreviewTable(sd, $('previewSrcTable'), 'previewSrcSearch');
+    renderPreviewTable(td, $('previewTgtTable'), 'previewTgtSearch');
+  } catch(e) {
+    $('previewSrcTable').innerHTML = '<p style="padding:10px;color:#f87171">Error: ' + e.message + '</p>';
+    $('previewTgtTable').innerHTML = '<p style="padding:10px;color:#f87171">Error: ' + e.message + '</p>';
+  }
+}
+
+function renderPreviewTable(data, container, searchInputId) {
+  if (!data.rows || !data.rows.length) {
+    container.innerHTML = '<p style="padding:10px;color:#7a8fa8">No rows returned.</p>';
+    return;
+  }
+
+  function buildTable(rows) {
+    const tdStyle = 'padding:5px 10px;white-space:nowrap;font-size:11px;border-bottom:1px solid #111827;border-right:1px solid #111827;max-width:220px;overflow:hidden;text-overflow:ellipsis';
+    const thStyle = 'padding:6px 10px;background:#1e2d45;font-size:11px;white-space:nowrap;border-right:1px solid #0d1a2e;border-bottom:2px solid #00d4ff;position:sticky;top:0;z-index:2;color:#00d4ff';
+    const headers = data.columns.map(function(c){
+      return '<th style="'+thStyle+'" title="'+c+'">'+c+'</th>';
+    }).join('');
+    const rowsHtml = rows.map(function(r){
+      return '<tr onmouseover="this.style.background=\'#131d2e\'" onmouseout="this.style.background=\'\'">'
+        + data.columns.map(function(c){
+            const val = r[c];
+            const display = val != null ? esc(String(val)) : '<span style="color:#4b6280;font-style:italic">NULL</span>';
+            return '<td style="'+tdStyle+'" title="'+(val != null ? String(val) : '')+'">'+display+'</td>';
+          }).join('')
+        + '</tr>';
+    }).join('');
+    return '<table style="width:max-content;min-width:100%;border-collapse:collapse">'
+         + '<thead><tr>'+headers+'</tr></thead>'
+         + '<tbody>'+rowsHtml+'</tbody>'
+         + '</table>';
+  }
+
+  container.innerHTML =
+    '<div style="padding:8px 10px;background:#0d1220;border-bottom:1px solid #1e2d45;'
+    + 'display:flex;align-items:center;gap:8px;">'
+      + '<span style="font-size:13px">🔍</span>'
+      + '<input id="'+searchInputId+'" type="text" placeholder="Search any value…"'
+      + ' style="flex:1;padding:5px 10px;background:#1e2d45;border:1px solid #2a3f5f;'
+      + 'color:#fff;border-radius:4px;font-size:12px;outline:none;width:auto;margin:0"'
+      + ' oninput="__previewSearch(\''+searchInputId+'\')">'
+      + '<span id="'+searchInputId+'_count" style="font-size:11px;color:#7a8fa8;white-space:nowrap">'
+      + data.rows.length + ' rows</span>'
+    + '</div>'
+    + '<div id="'+searchInputId+'_tableWrap"'
+    + ' style="overflow-x:auto;overflow-y:auto;max-height:250px;'
+    + 'scrollbar-width:thin;scrollbar-color:#2a3f5f #0d1a2e">'
+      + buildTable(data.rows)
+    + '</div>';
+
+  container._previewData  = data;
+  container._buildTable   = buildTable;
+}
+
+function __previewSearch(searchInputId) {
+  const input    = $(searchInputId);
+  const q        = input.value.trim().toLowerCase();
+  const wrap     = $(searchInputId + '_tableWrap');
+  const countEl  = $(searchInputId + '_count');
+  let container = input.parentElement;
+  while (container && !container._previewData) container = container.parentElement;
+  if (!container || !container._previewData) return;
+  const data       = container._previewData;
+  const buildTable = container._buildTable;
+  const filtered   = q
+    ? data.rows.filter(function(r){
+        return data.columns.some(function(c){ return r[c] != null && String(r[c]).toLowerCase().includes(q); });
+      })
+    : data.rows;
+  wrap.innerHTML = buildTable(filtered);
+  countEl.innerText = q ? (filtered.length + ' / ' + data.rows.length + ' rows') : (data.rows.length + ' rows');
+}
+
+/* RUN */
+async function runTest() {
   if(comparisonRunning){alert("Comparison already running");return;}
   comparisonRunning=true; $('runBtn').disabled=true; $('runBtn').innerText="RUNNING...";
   $('cancelBtn').style.display="inline-block";
@@ -681,12 +826,12 @@ async function runTest(){
   $('summaryContent').innerHTML="<p>Starting comparison...</p>";
   $('errorMessage').style.display="none"; $('virtualTableContainer').style.display="none";
   $('paginationTop').style.display="none"; $('paginationBottom').style.display="none";
-  try{
+  try {
     const payload={
-      srcConfig:state.srcConfig,tgtConfig:state.tgtConfig,
-      srcTable:state.srcTable,tgtTable:state.tgtTable,
-      keyMappings:state.keyMappings,fieldMappings:state.fieldMappings,
-      filters:state.filters.filter(f=>f.field&&(f.value||["is_null","is_not_null"].includes(f.operator))),
+      srcConfig:state.srcConfig, tgtConfig:state.tgtConfig,
+      srcTable:state.srcTable, tgtTable:state.tgtTable,
+      keyMappings:state.keyMappings, fieldMappings:state.fieldMappings,
+      filters:state.filters.filter(function(f){return f.field&&(f.value||["is_null","is_not_null"].includes(f.operator));}),
       limit:Number($('rowLimit').value),
       testCaseNo:$('testCaseNo').value||("TC-"+new Date().toISOString().slice(0,10))
     };
@@ -695,23 +840,23 @@ async function runTest(){
     if(data.error) throw new Error(data.error);
     currentJobId=data.jobId;
     pollJob(data.jobId);
-  }catch(err){ resetRunButton(); $('errorMessage').style.display="block"; $('errorMessage').innerText=err.message; }
+  } catch(err) { resetRunButton(); $('errorMessage').style.display="block"; $('errorMessage').innerText=err.message; }
 }
 function resetRunButton(){ comparisonRunning=false; $('runBtn').disabled=false; $('runBtn').innerText="▶ RUN COMPARISON"; $('cancelBtn').style.display="none"; }
-async function cancelJob(){
+async function cancelJob() {
   if(!currentJobId) return;
-  try{ await fetch(API+"/db/job/"+currentJobId+"/cancel",{method:"POST"}); $('summaryContent').innerHTML="<p>Cancelling job...</p>"; }
+  try { await fetch(API+"/db/job/"+currentJobId+"/cancel",{method:"POST"}); $('summaryContent').innerHTML="<p>Cancelling job...</p>"; }
   catch(e){alert("Cancel failed: "+e.message);}
 }
 
-/* ── POLL ── */
-async function pollJob(jobId){
+/* POLL */
+async function pollJob(jobId) {
   if(pollInterval) clearInterval(pollInterval);
-  pollInterval=setInterval(async()=>{
-    try{
+  pollInterval=setInterval(async function(){
+    try {
       const r=await fetch(API+"/db/job/"+jobId);
       const data=await r.json();
-      $('summaryContent').innerHTML=`<p>Status: ${data.status}</p><p>Progress: ${data.progress||0}%</p>`;
+      $('summaryContent').innerHTML='<p>Status: '+data.status+'</p><p>Progress: '+(data.progress||0)+'%</p>';
       if(data.status==="COMPLETED"){
         clearInterval(pollInterval); resetRunButton();
         showSummary(data.stats); showActiveFilters();
@@ -725,19 +870,19 @@ async function pollJob(jobId){
         $('errorMessage').style.display="block";
         $('errorMessage').innerText=(data.status==="CANCELLED"?"Job cancelled.":data.error)||"Comparison failed";
       }
-    }catch(err){ clearInterval(pollInterval); resetRunButton(); $('errorMessage').style.display="block"; $('errorMessage').innerText=err.message; }
-  },1500);
+    } catch(err) { clearInterval(pollInterval); resetRunButton(); $('errorMessage').style.display="block"; $('errorMessage').innerText=err.message; }
+  }, 1500);
 }
 
-/* ── RESULTS ── */
-async function loadResultsPage(){
+/* RESULTS */
+async function loadResultsPage() {
   if(!currentJobId) return;
-  try{
-    let url=`${API}/db/results/${currentJobId}?page=${currentPage}&pageSize=${pageSize}`;
-    if(currentStatusFilter) url+=`&status=${currentStatusFilter}`;
-    if(currentFieldFilter)  url+=`&field=${encodeURIComponent(currentFieldFilter)}`;
+  try {
+    let url=API+"/db/results/"+currentJobId+"?page="+currentPage+"&pageSize="+pageSize;
+    if(currentStatusFilter) url+="&status="+currentStatusFilter;
+    if(currentFieldFilter)  url+="&field="+encodeURIComponent(currentFieldFilter);
     const res=await fetch(url);
-    if(!res.ok){const t=await res.text().catch(()=>res.statusText);throw new Error(`Server error ${res.status}: ${t}`);}
+    if(!res.ok){const t=await res.text().catch(function(){return res.statusText;});throw new Error("Server error "+res.status+": "+t);}
     const data=await res.json();
     if(data&&data.detail) throw new Error("API error: "+JSON.stringify(data.detail));
     totalPages=data.totalPages||1; totalResults=data.total||0;
@@ -745,19 +890,17 @@ async function loadResultsPage(){
     updatePaginationControls();
     $('virtualTableContainer').style.display="block";
     $('paginationTop').style.display="flex"; $('paginationBottom').style.display="flex";
-    const sel = $('statusFilter');
-    if (sel) sel.value = currentStatusFilter || "";
+    const sel=$('statusFilter');
+    if(sel) sel.value=currentStatusFilter||"";
     const indicator=$('fieldFilterIndicator');
     if(indicator){
       if(currentFieldFilter){
         indicator.style.display="flex";
-        const statusHint = currentStatusFilter ? ` · showing ${currentStatusFilter}` : " · showing ALL statuses";
-        $('fieldFilterLabel').innerText=`Filtered: field = "${currentFieldFilter}"${statusHint} · ${(data.total||0).toLocaleString()} rows`;
-      } else {
-        indicator.style.display="none";
-      }
+        const statusHint=currentStatusFilter?" · showing "+currentStatusFilter:" · showing ALL statuses";
+        $('fieldFilterLabel').innerText='Filtered: field = "'+currentFieldFilter+'"'+statusHint+' · '+(data.total||0).toLocaleString()+' rows';
+      } else { indicator.style.display="none"; }
     }
-  }catch(err){ console.error("Failed to load results:",err); alert("Failed to load results: "+err.message); }
+  } catch(err) { console.error("Failed to load results:",err); alert("Failed to load results: "+err.message); }
 }
 function goToPage(page){if(page<1||page>totalPages)return;currentPage=page;loadResultsPage();}
 function changePageSize(){pageSize=Number($('pageSizeSelect').value);currentPage=1;loadResultsPage();}
@@ -767,8 +910,8 @@ function filterByStatus(){
   if(currentFieldFilter){
     const indicator=$('fieldFilterIndicator');
     if(indicator) indicator.style.display="flex";
-    const statusHint = currentStatusFilter ? ` · showing ${currentStatusFilter}` : " · showing ALL statuses";
-    $('fieldFilterLabel').innerText=`Filtered: field = "${currentFieldFilter}"${statusHint}`;
+    const statusHint=currentStatusFilter?" · showing "+currentStatusFilter:" · showing ALL statuses";
+    $('fieldFilterLabel').innerText='Filtered: field = "'+currentFieldFilter+'"'+statusHint;
   }
   loadResultsPage();
 }
@@ -782,95 +925,103 @@ function renderResults(rows){
   const tbody=$('results'); tbody.innerHTML="";
   if(!rows||!rows.length){ tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:#888;padding:20px">No results found.</td></tr>'; return; }
   const frag=document.createDocumentFragment();
-  rows.forEach(r=>{
+  rows.forEach(function(r){
     const tr=document.createElement("tr"); tr.className=r.status==="MATCHED"?"good":"bad";
     const tdStyle='padding:7px 8px;vertical-align:top;word-break:break-word;font-size:12px;border-bottom:1px solid #111827';
-    const statusColor=r.status==='MATCHED'?'#4ade80':r.status==='MISMATCH'?'#f87171':r.status==='NULL_MISMATCH'?'#fb923c':r.status==='SOURCE_ONLY'||r.status==='TARGET_ONLY'?'#a78bfa':'#e8f0fe';
-    tr.innerHTML=`<td style="${tdStyle}">${esc(r.key)}</td><td style="${tdStyle}">${esc(r.field)}</td><td style="${tdStyle}">${esc(r.source)}</td><td style="${tdStyle}">${esc(r.target)}</td><td style="${tdStyle};color:${statusColor};font-weight:bold">${esc(r.status)}</td>`;
+    const statusColor=r.status==='MATCHED'?'#4ade80':r.status==='MISMATCH'?'#f87171':r.status==='NULL_MISMATCH'?'#fb923c':(r.status==='SOURCE_ONLY'||r.status==='TARGET_ONLY')?'#a78bfa':'#e8f0fe';
+    tr.innerHTML='<td style="'+tdStyle+'">'+esc(r.key)+'</td><td style="'+tdStyle+'">'+esc(r.field)+'</td><td style="'+tdStyle+'">'+esc(r.source)+'</td><td style="'+tdStyle+'">'+esc(r.target)+'</td><td style="'+tdStyle+';color:'+statusColor+';font-weight:bold">'+esc(r.status)+'</td>';
     frag.appendChild(tr);
   });
   tbody.appendChild(frag);
 }
 function esc(v){if(v==null)return"";const d=document.createElement("div");d.textContent=String(v);return d.innerHTML;}
 
-/* ── SUMMARY ── */
+/* SUMMARY */
 function showSummary(stats){
   if(!stats) return;
-  const fa=stats.field_accuracy??stats.accuracy??0;
-  const kmr=stats.key_match_rate??0;
+  const fa=stats.field_accuracy!=null?stats.field_accuracy:(stats.accuracy||0);
+  const kmr=stats.key_match_rate||0;
   $('metricsRow').style.display="grid";
   $('metricFieldAcc').innerText=fa+"%"; $('metricKeyRate').innerText=kmr+"%";
   $('summary').style.display="block";
-  $('summaryContent').innerHTML=`
-    <p><strong>Total Comparisons:</strong> ${(stats.total||0).toLocaleString()}</p>
-    <p><strong>Matched Fields:</strong> <span style="color:#4ade80">${(stats.matched||0).toLocaleString()}</span></p>
-    <p><strong>Mismatched Fields:</strong> <span style="color:#f87171">${(stats.mismatched||0).toLocaleString()}</span></p>
-    <p><strong>Null Mismatches:</strong> ${(stats.null_mismatches||0).toLocaleString()}</p>
-    <p><strong>Source Only Keys:</strong> ${(stats.source_only||0).toLocaleString()}</p>
-    <p><strong>Target Only Keys:</strong> ${(stats.target_only||0).toLocaleString()}</p>
-    <p><strong>Source Duplicates:</strong> ${(stats.source_duplicates||0).toLocaleString()}</p>
-    <p><strong>Target Duplicates:</strong> ${(stats.target_duplicates||0).toLocaleString()}</p>
-    <p><strong>Source Row Count:</strong> ${(stats.src_row_count||0).toLocaleString()}</p>
-    <p><strong>Target Row Count:</strong> ${(stats.tgt_row_count||0).toLocaleString()}</p>`;
+  const keyFieldNames=state.keyMappings.map(function(k){return k.src;}).join(', ')||'—';
+  const srcTableName=state.srcTable?(state.srcTable.schema+'.'+state.srcTable.name):'—';
+  const tgtTableName=state.tgtTable?(state.tgtTable.schema+'.'+state.tgtTable.name):'—';
+  const srcDbName=state.srcConfig.database||'—';
+  const tgtDbName=state.tgtConfig.database||'—';
+  $('summaryContent').innerHTML=
+    '<p><strong>Source:</strong> <span style="color:#60a5fa">'+srcDbName+'</span> · <span style="color:#7a8fa8">'+srcTableName+'</span></p>'
+    +'<p><strong>Target:</strong> <span style="color:#60a5fa">'+tgtDbName+'</span> · <span style="color:#7a8fa8">'+tgtTableName+'</span></p>'
+    +'<p><strong>Key Fields:</strong> <span style="color:#a78bfa">'+keyFieldNames+'</span></p>'
+    +'<p><strong>Total Comparisons:</strong> '+(stats.total||0).toLocaleString()+'</p>'
+    +'<p><strong>Matched Fields:</strong> <span style="color:#4ade80">'+(stats.matched||0).toLocaleString()+'</span></p>'
+    +'<p><strong>Mismatched Fields:</strong> <span style="color:#f87171">'+(stats.mismatched||0).toLocaleString()+'</span></p>'
+    +'<p><strong>Null Mismatches:</strong> '+(stats.null_mismatches||0).toLocaleString()+'</p>'
+    +'<p><strong>Source Only Keys:</strong> '+(stats.source_only||0).toLocaleString()+'</p>'
+    +'<p><strong>Target Only Keys:</strong> '+(stats.target_only||0).toLocaleString()+'</p>'
+    +'<p><strong>Source Duplicates:</strong> '+(stats.source_duplicates||0).toLocaleString()+'</p>'
+    +'<p><strong>Target Duplicates:</strong> '+(stats.target_duplicates||0).toLocaleString()+'</p>'
+    +'<p><strong>Source Row Count:</strong> '+(stats.src_row_count||0).toLocaleString()+'</p>'
+    +'<p><strong>Target Row Count:</strong> '+(stats.tgt_row_count||0).toLocaleString()+'</p>';
 }
 
-/* ── FIELD SUMMARY ── */
+/* FIELD SUMMARY */
 let fieldSummaryData=[];
 let fieldSummarySortCol="mismatched";
 let fieldSummarySortAsc=false;
 
 async function loadFieldSummary(jobId){
   $('fieldSummaryBox').style.display="none"; fieldSummaryData=[];
-  try{
-    const res=await fetch(`${API}/db/field-summary/${jobId}`);
+  try {
+    const res=await fetch(API+"/db/field-summary/"+jobId);
     if(!res.ok) return;
     const data=await res.json();
     fieldSummaryData=data.summary||[];
     if(!fieldSummaryData.length) return;
-    const withMismatches=fieldSummaryData.filter(f=>f.mismatched>0||f.null_mismatch>0).length;
-    $('fieldSummaryCount').innerText=`— ${fieldSummaryData.length} fields · ${withMismatches} with mismatches`;
+    const withMismatches=fieldSummaryData.filter(function(f){return f.mismatched>0||f.null_mismatch>0;}).length;
+    $('fieldSummaryCount').innerText='— '+fieldSummaryData.length+' fields · '+withMismatches+' with mismatches';
     $('fieldSummaryBox').style.display="block";
     renderFieldSummary();
-  }catch(e){console.warn("Field summary failed:",e.message);}
+  } catch(e){ console.warn("Field summary failed:",e.message); }
 }
 function renderFieldSummary(){
   const search=($('fieldSummarySearch').value||"").toLowerCase();
   const filterVal=$('fieldSummaryFilter').value;
-  let data=fieldSummaryData.filter(f=>{
+  let data=fieldSummaryData.filter(function(f){
     if(search&&!f.field.toLowerCase().includes(search)) return false;
     if(filterVal==="mismatch"&&f.mismatched===0&&f.null_mismatch===0) return false;
     if(filterVal==="perfect"&&f.accuracy<100) return false;
     if(filterVal==="failing"&&f.accuracy>=70) return false;
     return true;
   });
-  data.sort((a,b)=>{
+  data.sort(function(a,b){
     let av=a[fieldSummarySortCol],bv=b[fieldSummarySortCol];
-    if(typeof av==="string") av=av.toLowerCase(),bv=bv.toLowerCase();
+    if(typeof av==="string"){av=av.toLowerCase();bv=bv.toLowerCase();}
     return fieldSummarySortAsc?(av>bv?1:-1):(av<bv?1:-1);
   });
   const tbody=$('fieldSummaryTableBody');
-  if(!data.length){tbody.innerHTML=`<tr><td colspan="6" style="text-align:center;color:#4b6280;padding:16px">No fields match.</td></tr>`;$('fieldSummaryFooterRight').innerText="";return;}
-  const totalMismatches=data.reduce((s,f)=>s+f.mismatched+f.null_mismatch,0);
-  tbody.innerHTML=data.map(f=>{
+  if(!data.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:#4b6280;padding:16px">No fields match.</td></tr>';$('fieldSummaryFooterRight').innerText="";return;}
+  const totalMismatches=data.reduce(function(s,f){return s+f.mismatched+f.null_mismatch;},0);
+  tbody.innerHTML=data.map(function(f){
     const hasMismatch=f.mismatched>0||f.null_mismatch>0;
     const badgeClass=f.accuracy===100?"badge-ok":f.accuracy>=70?"badge-warn":"badge-bad";
     const barColor=f.accuracy===100?"#4ade80":f.accuracy>=70?"#f59e0b":"#ef4444";
     const pct=totalMismatches>0?((f.mismatched+f.null_mismatch)/totalMismatches*100).toFixed(1):"0.0";
-    return `<tr>
-      <td><span class="clickable-field" onclick="drillDownField('${esc(f.field)}')">${esc(f.field)}</span></td>
-      <td>${hasMismatch?`<span class="mismatch-badge badge-bad">${f.mismatched.toLocaleString()}</span><span style="font-size:10px;color:#4b6280;margin-left:4px">${pct}%</span>`:`<span style="color:#4ade80">✓ 0</span>`}</td>
-      <td>${f.null_mismatch>0?`<span class="mismatch-badge badge-warn">${f.null_mismatch.toLocaleString()}</span>`:`<span style="color:#4b6280">0</span>`}</td>
-      <td style="color:#4ade80">${f.matched.toLocaleString()}</td>
-      <td style="color:#7a8fa8">${f.total.toLocaleString()}</td>
-      <td><div class="accuracy-cell"><div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${f.accuracy}%;background:${barColor}"></div></div><span class="mismatch-badge ${badgeClass}">${f.accuracy}%</span></div></td>
-    </tr>`;
+    return '<tr>'
+      +'<td><span class="clickable-field" onclick="drillDownField(\''+esc(f.field)+'\')">'+esc(f.field)+'</span></td>'
+      +'<td>'+(hasMismatch?'<span class="mismatch-badge badge-bad">'+f.mismatched.toLocaleString()+'</span><span style="font-size:10px;color:#4b6280;margin-left:4px">'+pct+'%</span>':'<span style="color:#4ade80">✓ 0</span>')+'</td>'
+      +'<td>'+(f.null_mismatch>0?'<span class="mismatch-badge badge-warn">'+f.null_mismatch.toLocaleString()+'</span>':'<span style="color:#4b6280">0</span>')+'</td>'
+      +'<td style="color:#4ade80">'+f.matched.toLocaleString()+'</td>'
+      +'<td style="color:#7a8fa8">'+f.total.toLocaleString()+'</td>'
+      +'<td><div class="accuracy-cell"><div class="mini-bar-bg"><div class="mini-bar-fill" style="width:'+f.accuracy+'%;background:'+barColor+'"></div></div><span class="mismatch-badge '+badgeClass+'">'+f.accuracy+'%</span></div></td>'
+      +'</tr>';
   }).join("");
-  $('fieldSummaryFooterRight').innerText=`Showing ${data.length} of ${fieldSummaryData.length} fields · ${totalMismatches.toLocaleString()} total mismatches`;
+  $('fieldSummaryFooterRight').innerText='Showing '+data.length+' of '+fieldSummaryData.length+' fields · '+totalMismatches.toLocaleString()+' total mismatches';
 }
 function sortFieldSummary(col){
   if(fieldSummarySortCol===col){fieldSummarySortAsc=!fieldSummarySortAsc;}
   else{fieldSummarySortCol=col;fieldSummarySortAsc=col==="field";}
-  document.querySelectorAll('.field-summary-table th').forEach(th=>th.classList.remove('sorted'));
+  document.querySelectorAll('.field-summary-table th').forEach(function(th){th.classList.remove('sorted');});
   const hdr=$('fsh-'+col);
   if(hdr){hdr.classList.add('sorted');hdr.querySelector('.sort-icon').innerText=fieldSummarySortAsc?'↑':'↓';}
   renderFieldSummary();
@@ -879,88 +1030,77 @@ function toggleSummary(){$('summaryBody').classList.toggle('hidden');$('summaryH
 function toggleFieldSummary(){$('fieldSummaryBody').classList.toggle('hidden');$('fieldSummaryHeader').classList.toggle('collapsed');}
 
 function drillDownField(fieldName){
-  currentFieldFilter = fieldName;
-  currentPage = 1;
-  const fieldData = fieldSummaryData.find(f => f.field === fieldName);
-  if (fieldData) {
-    if (fieldData.mismatched > 0 && fieldData.null_mismatch > 0) { currentStatusFilter = null; }
-    else if (fieldData.mismatched > 0) { currentStatusFilter = "MISMATCH"; }
-    else if (fieldData.null_mismatch > 0) { currentStatusFilter = "NULL_MISMATCH"; }
-    else { currentStatusFilter = "MATCHED"; }
-  } else { currentStatusFilter = null; }
-  const sel = $('statusFilter');
-  if (sel) sel.value = currentStatusFilter || "";
+  currentFieldFilter=fieldName; currentPage=1;
+  const fieldData=fieldSummaryData.find(function(f){return f.field===fieldName;});
+  if(fieldData){
+    if(fieldData.mismatched>0&&fieldData.null_mismatch>0){currentStatusFilter=null;}
+    else if(fieldData.mismatched>0){currentStatusFilter="MISMATCH";}
+    else if(fieldData.null_mismatch>0){currentStatusFilter="NULL_MISMATCH";}
+    else{currentStatusFilter="MATCHED";}
+  } else { currentStatusFilter=null; }
+  const sel=$('statusFilter'); if(sel) sel.value=currentStatusFilter||"";
   loadResultsPage();
   $('virtualTableContainer').scrollIntoView({behavior:'smooth',block:'start'});
 }
-
 function clearFieldFilter(){
-  currentFieldFilter  = null;
-  currentStatusFilter = null;
-  const sel = $('statusFilter'); if(sel) sel.value = "";
-  const indicator = $('fieldFilterIndicator'); if(indicator) indicator.style.display = "none";
-  currentPage = 1;
-  loadResultsPage();
+  currentFieldFilter=null; currentStatusFilter=null;
+  const sel=$('statusFilter'); if(sel) sel.value="";
+  const indicator=$('fieldFilterIndicator'); if(indicator) indicator.style.display="none";
+  currentPage=1; loadResultsPage();
 }
-
 function downloadFieldSummaryCSV(){
   if(!fieldSummaryData.length){alert("No field summary to export");return;}
   const header="field,matched,mismatched,null_mismatch,total,accuracy\n";
-  const rows=fieldSummaryData.map(f=>`${f.field},${f.matched},${f.mismatched},${f.null_mismatch},${f.total},${f.accuracy}`).join("\n");
+  const rows=fieldSummaryData.map(function(f){return f.field+','+f.matched+','+f.mismatched+','+f.null_mismatch+','+f.total+','+f.accuracy;}).join("\n");
   const blob=new Blob([header+rows],{type:"text/csv"});
   const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");a.href=url;a.download=`field_summary_${(currentJobId||"export").slice(0,8)}.csv`;a.click();
+  const a=document.createElement("a");a.href=url;a.download='field_summary_'+(currentJobId||"export").slice(0,8)+'.csv';a.click();
   URL.revokeObjectURL(url);
 }
 
-/* ── DOWNLOAD CSV ── */
+/* DOWNLOAD CSV */
 async function downloadCSV(){
   if(!currentJobId){alert("No results to download");return;}
-  try{
+  try {
     const res=await fetch(API+"/db/download",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jobId:currentJobId})});
     const blob=await res.blob();
     const url=URL.createObjectURL(blob);
-    const a=document.createElement("a");a.href=url;a.download=`etl_results_${currentJobId.slice(0,8)}.csv`;a.click();
+    const a=document.createElement("a");a.href=url;a.download='etl_results_'+currentJobId.slice(0,8)+'.csv';a.click();
     URL.revokeObjectURL(url);
-  }catch(err){alert("Download failed: "+err.message);}
+  } catch(err){ alert("Download failed: "+err.message); }
 }
 
-/* ═══════════════════════════════════════════════════════════
-   HTML REPORT EXPORTER
-   ═══════════════════════════════════════════════════════════ */
+/* HTML REPORT EXPORTER */
 async function exportHTMLReport(jobId, apiBase) {
   if (!jobId) { alert("No job selected for export."); return; }
   const btn = $('exportHtmlBtn');
   if (btn) { btn.disabled = true; btn.innerText = "⏳ Preparing…"; }
   try {
-    const metaRes = await fetch(`${apiBase}/db/share/${jobId}`);
+    const metaRes = await fetch(apiBase+"/db/share/"+jobId);
     if (!metaRes.ok) throw new Error("Could not load job metadata.");
     const meta = await metaRes.json();
-
     let fieldSummary = [];
     try {
-      const fsRes = await fetch(`${apiBase}/db/field-summary/${jobId}`);
+      const fsRes = await fetch(apiBase+"/db/field-summary/"+jobId);
       if (fsRes.ok) { const fd = await fsRes.json(); fieldSummary = fd.summary || []; }
     } catch(e) {}
-
     let allResults = [], page = 1, totalPgs = 999;
     while (page <= totalPgs) {
-      const r = await fetch(`${apiBase}/db/results/${jobId}?page=${page}&pageSize=1000`);
+      const r = await fetch(apiBase+"/db/results/"+jobId+"?page="+page+"&pageSize=1000");
       if (!r.ok) break;
       const d = await r.json();
       allResults = allResults.concat(d.results || []);
       totalPgs = d.totalPages || 1;
       page++;
-      if (btn) btn.innerText = `⏳ Loading… ${allResults.length.toLocaleString()} rows`;
+      if (btn) btn.innerText = "⏳ Loading… "+allResults.length.toLocaleString()+" rows";
     }
-
     const html = buildReportHTML(meta, fieldSummary, allResults);
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
     const safeDate = (meta.date || "").slice(0, 10).replace(/-/g, "");
     const safeCase = (meta.testCase || "report").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30);
-    a.href = url; a.download = `ETL_Report_${safeCase}_${safeDate}.html`; a.click();
+    a.href = url; a.download = "ETL_Report_"+safeCase+"_"+safeDate+".html"; a.click();
     URL.revokeObjectURL(url);
     showToast("✓ HTML report downloaded!");
   } catch(e) {
@@ -971,145 +1111,30 @@ async function exportHTMLReport(jobId, apiBase) {
 }
 
 function buildReportHTML(meta, fieldSummary, allResults) {
-  const fa  = meta.fieldAccuracy ?? meta.accuracy ?? 0;
-  const kmr = meta.keyMatchRate  ?? 0;
+  const fa  = meta.fieldAccuracy != null ? meta.fieldAccuracy : (meta.accuracy || 0);
+  const kmr = meta.keyMatchRate  || 0;
   const faColor  = fa  >= 90 ? "#4ade80" : fa  >= 70 ? "#f59e0b" : "#f87171";
   const kmrColor = kmr >= 90 ? "#4ade80" : kmr >= 70 ? "#f59e0b" : "#f87171";
-  const escR = v => { if (v == null) return ""; const d = document.createElement("div"); d.textContent = String(v); return d.innerHTML; };
-  const totalMismatches = fieldSummary.reduce((s,f) => s + f.mismatched + f.null_mismatch, 0);
-  const fsRows = fieldSummary.map(f => {
+  const escR = function(v) { if (v == null) return ""; const d = document.createElement("div"); d.textContent = String(v); return d.innerHTML; };
+  const totalMismatches = fieldSummary.reduce(function(s,f){ return s + f.mismatched + f.null_mismatch; }, 0);
+  const fsRows = fieldSummary.map(function(f) {
     const bc = f.accuracy===100?"#4ade8022;color:#4ade80":f.accuracy>=70?"#f59e0b22;color:#f59e0b":"#f8717122;color:#f87171";
     const pct = totalMismatches>0?((f.mismatched+f.null_mismatch)/totalMismatches*100).toFixed(1):"0.0";
-    const bar = `<div style="display:inline-block;background:#1e2d45;border-radius:3px;height:6px;width:60px;overflow:hidden;vertical-align:middle;margin-right:6px"><div style="height:100%;width:${f.accuracy}%;background:${f.accuracy===100?"#4ade80":f.accuracy>=70?"#f59e0b":"#ef4444"}"></div></div>`;
-    return `<tr><td style="color:#e8f0fe">${escR(f.field)}</td><td style="color:${f.mismatched>0?"#f87171":"#4b6280"}">${f.mismatched.toLocaleString()}${f.mismatched>0?`<span style="font-size:10px;color:#4b6280;margin-left:4px">${pct}%</span>`:""}</td><td style="color:${f.null_mismatch>0?"#fb923c":"#4b6280"}">${f.null_mismatch.toLocaleString()}</td><td style="color:#4ade80">${f.matched.toLocaleString()}</td><td style="color:#7a8fa8">${f.total.toLocaleString()}</td><td>${bar}<span style="background:${bc};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">${f.accuracy}%</span></td></tr>`;
+    const bar = '<div style="display:inline-block;background:#1e2d45;border-radius:3px;height:6px;width:60px;overflow:hidden;vertical-align:middle;margin-right:6px"><div style="height:100%;width:'+f.accuracy+'%;background:'+(f.accuracy===100?"#4ade80":f.accuracy>=70?"#f59e0b":"#ef4444")+'"></div></div>';
+    return '<tr><td style="color:#e8f0fe">'+escR(f.field)+'</td><td style="color:'+(f.mismatched>0?"#f87171":"#4b6280")+'">'+f.mismatched.toLocaleString()+(f.mismatched>0?'<span style="font-size:10px;color:#4b6280;margin-left:4px">'+pct+'%</span>':"")+'</td><td style="color:'+(f.null_mismatch>0?"#fb923c":"#4b6280")+'">'+f.null_mismatch.toLocaleString()+'</td><td style="color:#4ade80">'+f.matched.toLocaleString()+'</td><td style="color:#7a8fa8">'+f.total.toLocaleString()+'</td><td>'+bar+'<span style="background:'+bc+';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">'+f.accuracy+'%</span></td></tr>';
   }).join("");
   const STATUS_COLORS = {MATCHED:"#4ade80",MISMATCH:"#f87171",NULL_MISMATCH:"#fb923c",SOURCE_ONLY:"#a78bfa",TARGET_ONLY:"#c084fc",SOURCE_DUPLICATE:"#facc15",TARGET_DUPLICATE:"#fbbf24"};
-  const resultRows = allResults.map(r => {
+  const resultRows = allResults.map(function(r) {
     const c = STATUS_COLORS[r.status]||"#e8f0fe";
     const rowBg = r.status==="MATCHED"?"#0d2318":r.status==="MISMATCH"?"#2a0f0f":r.status==="NULL_MISMATCH"?"#2a1a00":"#1a1a2e";
-    return `<tr style="background:${rowBg}"><td style="font-size:11px;word-break:break-all">${escR(r.key)}</td><td>${escR(r.field)}</td><td style="word-break:break-all">${escR(r.source)}</td><td style="word-break:break-all">${escR(r.target)}</td><td><span style="background:${c}22;color:${c};padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold;display:inline-block">${escR(r.status)}</span></td></tr>`;
+    return '<tr style="background:'+rowBg+'"><td style="font-size:11px;word-break:break-all">'+escR(r.key)+'</td><td>'+escR(r.field)+'</td><td style="word-break:break-all">'+escR(r.source)+'</td><td style="word-break:break-all">'+escR(r.target)+'</td><td><span style="background:'+c+'22;color:'+c+';padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold;display:inline-block">'+escR(r.status)+'</span></td></tr>';
   }).join("");
   const generatedAt = new Date().toLocaleString();
-  const fsSection = fieldSummary.length ? `
-  <div class="section">
-    <div class="collapsible-header" onclick="toggleSection('fs')"><h3>📊 Mismatch Field Summary <span style="color:#7a8fa8;font-weight:normal;font-size:12px">— ${fieldSummary.length} fields</span></h3><span class="chevron">▼</span></div>
-    <div class="collapsible-body" id="fs-body">
-      <div class="filter-bar"><input id="fs-search" placeholder="🔍 Filter fields…" oninput="filterFs()"><select id="fs-filter" onchange="filterFs()"><option value="all">All Fields</option><option value="mismatch">Has Mismatches</option><option value="perfect">Perfect (100%)</option><option value="failing">Failing (&lt;70%)</option></select><span class="count-badge" id="fs-count">${fieldSummary.length} fields</span></div>
-      <div class="table-wrap"><table><thead><tr><th onclick="sortFsCol('field')" style="cursor:pointer">Field ↕</th><th onclick="sortFsCol('mismatched')" style="cursor:pointer;color:#00d4ff">Mismatches ↓</th><th onclick="sortFsCol('null_mismatch')" style="cursor:pointer">Null Mismatches ↕</th><th onclick="sortFsCol('matched')" style="cursor:pointer">Matched ↕</th><th onclick="sortFsCol('total')" style="cursor:pointer">Total ↕</th><th onclick="sortFsCol('accuracy')" style="cursor:pointer">Accuracy ↕</th></tr></thead><tbody id="fs-tbody">${fsRows}</tbody></table></div>
-      <div style="padding:8px 0;font-size:11px;color:#4b6280" id="fs-footer">Showing ${fieldSummary.length} fields · ${totalMismatches.toLocaleString()} total mismatches</div>
-    </div>
-  </div>` : "";
-  return `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>ETL Report — ${escR(meta.testCase||"N/A")}</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:#0a0e17;color:#e8f0fe;font-family:'Segoe UI',Arial,sans-serif;min-height:100vh;padding-bottom:60px}
-.report-header{background:#0d1220;border-bottom:2px solid #00d4ff;padding:20px 32px;display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap}
-.report-header h1{font-size:22px;font-weight:700;letter-spacing:.5px;margin-bottom:4px}
-.report-header .sub{font-size:12px;color:#7a8fa8}
-.badge{background:#00d4ff;color:#0a0e17;padding:3px 10px;border-radius:3px;font-size:11px;font-weight:bold}
-.COMPLETED{background:#15382166;color:#4ade80;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}
-.FAILED{background:#4c1d1d66;color:#f87171;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}
-.CANCELLED{background:#2d1f0066;color:#fb923c;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}
-.body{max-width:1400px;margin:0 auto;padding:28px 32px}
-.section{margin-bottom:32px}
-.section-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#4b6280;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #1e2d45}
-.metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}
-.metric-card{background:#111827;border:1px solid #1e2d45;border-radius:8px;padding:16px}
-.metric-card .val{font-size:30px;font-weight:800;line-height:1}
-.metric-card .lbl{font-size:11px;color:#7a8fa8;margin-top:6px}
-.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.stat-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#111827;border-radius:4px;font-size:12px}
-.stat-row .s-label{color:#7a8fa8}.stat-row .s-val{font-weight:700}
-table{width:100%;border-collapse:collapse;font-size:12px}
-th{background:#111827;color:#7a8fa8;padding:9px 12px;text-align:left;border-bottom:1px solid #1e2d45;white-space:nowrap;position:sticky;top:0;z-index:2}
-td{padding:8px 12px;border-bottom:1px solid #111827}
-.table-wrap{border:1px solid #1e2d45;border-radius:6px;overflow:hidden}
-.results-wrap{max-height:520px;overflow-y:auto;border:1px solid #1e2d45;border-radius:6px}
-.filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
-.filter-bar input,.filter-bar select{background:#111827;border:1px solid #2a3f5f;color:#fff;padding:6px 10px;border-radius:4px;font-size:12px}
-.filter-bar input{width:220px}
-.count-badge{background:#1e2d45;padding:4px 12px;border-radius:4px;font-size:11px;color:#7a8fa8}
-.export-note{background:#0d2040;border:1px solid #1e2d45;border-radius:6px;padding:12px 16px;font-size:11px;color:#7a8fa8;margin-bottom:20px;display:flex;align-items:center;gap:8px}
-.footer{text-align:center;padding:32px;color:#3a4f6a;font-size:11px;border-top:1px solid #1a2638;margin-top:40px}
-.collapsible-header{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:12px 16px;background:#111827;border-radius:6px 6px 0 0;user-select:none}
-.collapsible-header:hover{background:#141e30}
-.collapsible-header h3{font-size:13px;margin:0}
-.collapsible-header .chevron{color:#00d4ff;font-size:15px;transition:transform .2s}
-.collapsible-header.collapsed .chevron{transform:rotate(-90deg)}
-.collapsible-body{padding:16px;background:#0d1a2e;border:1px solid #1e2d45;border-top:none;border-radius:0 0 6px 6px}
-.collapsible-body.hidden{display:none}
-.csv-btn{background:#1e2d45;color:#e8f0fe;border:none;padding:6px 14px;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold}
-.csv-btn:hover{background:#2a3f5f}
-@media(max-width:700px){.metrics-grid{grid-template-columns:1fr 1fr}.stats-grid{grid-template-columns:1fr}}
-</style></head><body>
-<div class="report-header">
-  <div><h1>📋 ETL Comparison Report</h1><div class="sub">${escR(meta.testCase||"N/A")} &nbsp;·&nbsp; ${new Date(meta.date).toLocaleString()} &nbsp;·&nbsp; Job: <code style="font-size:11px">${escR(meta.jobId)}</code></div></div>
-  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="${meta.status}">${escR(meta.status)}</span><span class="badge">v9.1</span><button class="csv-btn" onclick="downloadCSV()">⬇ Export CSV</button></div>
-</div>
-<div class="body">
-  <div class="export-note">📄 <span>Self-contained offline report &nbsp;·&nbsp; Generated ${generatedAt} &nbsp;·&nbsp; ${allResults.length.toLocaleString()} total rows embedded</span></div>
-  <div class="metrics-grid">
-    <div class="metric-card"><div class="val" style="color:${faColor}">${fa}%</div><div class="lbl">Field Accuracy</div></div>
-    <div class="metric-card"><div class="val" style="color:${kmrColor}">${kmr}%</div><div class="lbl">Key Match Rate</div></div>
-    <div class="metric-card"><div class="val" style="color:#60a5fa">${(meta.totalRecords||0).toLocaleString()}</div><div class="lbl">Total Comparisons</div></div>
-    <div class="metric-card"><div class="val" style="color:#f87171">${(meta.mismatched||0).toLocaleString()}</div><div class="lbl">Mismatched Fields</div></div>
-  </div>
-  <div class="section"><div class="section-title">Execution Statistics</div><div class="stats-grid">
-    <div class="stat-row"><span class="s-label">Matched Fields</span><span class="s-val" style="color:#4ade80">${(meta.matched||0).toLocaleString()}</span></div>
-    <div class="stat-row"><span class="s-label">Null Mismatches</span><span class="s-val" style="color:#fb923c">${(meta.nullMismatches||0).toLocaleString()}</span></div>
-    <div class="stat-row"><span class="s-label">Source-Only Keys</span><span class="s-val" style="color:#fb923c">${(meta.keysSrcOnly||0).toLocaleString()}</span></div>
-    <div class="stat-row"><span class="s-label">Target-Only Keys</span><span class="s-val" style="color:#a78bfa">${(meta.keysTgtOnly||0).toLocaleString()}</span></div>
-    <div class="stat-row"><span class="s-label">Keys in Both</span><span class="s-val" style="color:#60a5fa">${(meta.keysInBoth||0).toLocaleString()}</span></div>
-    <div class="stat-row"><span class="s-label">Source Duplicates</span><span class="s-val">${(meta.sourceDuplicates||0).toLocaleString()}</span></div>
-    <div class="stat-row"><span class="s-label">Target Duplicates</span><span class="s-val">${(meta.targetDuplicates||0).toLocaleString()}</span></div>
-    <div class="stat-row"><span class="s-label">Source Row Count</span><span class="s-val">${(meta.srcRowCount||0).toLocaleString()}</span></div>
-    <div class="stat-row"><span class="s-label">Target Row Count</span><span class="s-val">${(meta.tgtRowCount||0).toLocaleString()}</span></div>
-  </div></div>
-  ${fsSection}
-  <div class="section">
-    <div class="collapsible-header" onclick="toggleSection('results')"><h3>🔍 Comparison Results <span style="color:#7a8fa8;font-weight:normal;font-size:12px">— ${allResults.length.toLocaleString()} rows</span></h3><span class="chevron">▼</span></div>
-    <div class="collapsible-body" id="results-body">
-      <div class="filter-bar"><input id="r-search" placeholder="🔍 Search key or field…" oninput="filterResults()"><select id="r-status" onchange="filterResults()"><option value="">All Status</option><option value="MATCHED">Matched</option><option value="MISMATCH">Mismatch</option><option value="NULL_MISMATCH">Null Mismatch</option><option value="SOURCE_ONLY">Source Only</option><option value="TARGET_ONLY">Target Only</option><option value="SOURCE_DUPLICATE">Source Duplicate</option><option value="TARGET_DUPLICATE">Target Duplicate</option></select><span class="count-badge" id="r-count">${allResults.length.toLocaleString()} rows</span></div>
-      <div class="results-wrap"><table><thead><tr><th style="width:25%">Key</th><th style="width:12%">Field</th><th style="width:24%">Source</th><th style="width:24%">Target</th><th style="width:15%">Status</th></tr></thead><tbody id="r-tbody">${resultRows}</tbody></table></div>
-      <div style="padding:8px 0;font-size:11px;color:#4b6280" id="r-footer">Showing all ${allResults.length.toLocaleString()} rows</div>
-    </div>
-  </div>
-</div>
-<div class="footer">ETL Automation Tool v9.1 &nbsp;·&nbsp; Report generated ${generatedAt}<br>Self-contained offline snapshot. Data reflects the state at time of export.</div>
-<script>
-const ALL_RESULTS=${JSON.stringify(allResults)};
-const FIELD_SUMMARY=${JSON.stringify(fieldSummary)};
-function toggleSection(id){const b=document.getElementById(id+'-body');b.previousElementSibling.classList.toggle('collapsed');b.classList.toggle('hidden');}
-let fsSortCol='mismatched',fsSortAsc=false;
-function filterFs(){
-  const q=(document.getElementById('fs-search')?.value||'').toLowerCase();
-  const fv=document.getElementById('fs-filter')?.value||'all';
-  let data=FIELD_SUMMARY.filter(f=>{if(q&&!f.field.toLowerCase().includes(q))return false;if(fv==='mismatch'&&f.mismatched===0&&f.null_mismatch===0)return false;if(fv==='perfect'&&f.accuracy<100)return false;if(fv==='failing'&&f.accuracy>=70)return false;return true;});
-  data.sort((a,b)=>{let av=a[fsSortCol],bv=b[fsSortCol];if(typeof av==='string'){av=av.toLowerCase();bv=bv.toLowerCase();}return fsSortAsc?(av>bv?1:-1):(av<bv?1:-1);});
-  const totalMm=data.reduce((s,f)=>s+f.mismatched+f.null_mismatch,0);
-  document.getElementById('fs-tbody').innerHTML=data.map(f=>{const bc=f.accuracy===100?'#4ade8022;color:#4ade80':f.accuracy>=70?'#f59e0b22;color:#f59e0b':'#f8717122;color:#f87171';const pct=totalMm>0?((f.mismatched+f.null_mismatch)/totalMm*100).toFixed(1):'0.0';const bar='<div style="display:inline-block;background:#1e2d45;border-radius:3px;height:6px;width:60px;overflow:hidden;vertical-align:middle;margin-right:6px"><div style="height:100%;width:'+f.accuracy+'%;background:'+(f.accuracy===100?'#4ade80':f.accuracy>=70?'#f59e0b':'#ef4444')+'"></div></div>';return '<tr><td style="color:#e8f0fe">'+f.field+'</td><td style="color:'+(f.mismatched>0?'#f87171':'#4b6280')+'">'+f.mismatched.toLocaleString()+(f.mismatched>0?'<span style="font-size:10px;color:#4b6280;margin-left:4px">'+pct+'%</span>':'')+'</td><td style="color:'+(f.null_mismatch>0?'#fb923c':'#4b6280')+'">'+f.null_mismatch.toLocaleString()+'</td><td style="color:#4ade80">'+f.matched.toLocaleString()+'</td><td style="color:#7a8fa8">'+f.total.toLocaleString()+'</td><td>'+bar+'<span style="background:'+bc+';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">'+f.accuracy+'%</span></td></tr>';}).join('');
-  document.getElementById('fs-count').innerText=data.length+' fields';
-  document.getElementById('fs-footer').innerText='Showing '+data.length+' of '+FIELD_SUMMARY.length+' fields \xb7 '+totalMm.toLocaleString()+' total mismatches';
-}
-function sortFsCol(col){fsSortAsc=fsSortCol===col?!fsSortAsc:col==='field';fsSortCol=col;filterFs();}
-const SC={MATCHED:'#4ade80',MISMATCH:'#f87171',NULL_MISMATCH:'#fb923c',SOURCE_ONLY:'#a78bfa',TARGET_ONLY:'#c084fc',SOURCE_DUPLICATE:'#facc15',TARGET_DUPLICATE:'#fbbf24'};
-function filterResults(){
-  const q=(document.getElementById('r-search').value||'').toLowerCase();
-  const st=document.getElementById('r-status').value;
-  const data=ALL_RESULTS.filter(r=>(!st||r.status===st)&&(!q||r.key?.toLowerCase().includes(q)||r.field?.toLowerCase().includes(q)));
-  const rb=r=>r.status==='MATCHED'?'#0d2318':r.status==='MISMATCH'?'#2a0f0f':r.status==='NULL_MISMATCH'?'#2a1a00':'#1a1a2e';
-  const pill=r=>{const c=SC[r.status]||'#e8f0fe';return 'background:'+c+'22;color:'+c+';padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold;display:inline-block';};
-  function e(v){if(v==null)return'';const d=document.createElement('div');d.textContent=String(v);return d.innerHTML;}
-  document.getElementById('r-tbody').innerHTML=data.map(r=>'<tr style="background:'+rb(r)+'"><td style="font-size:11px;word-break:break-all">'+e(r.key)+'</td><td>'+e(r.field)+'</td><td style="word-break:break-all">'+e(r.source)+'</td><td style="word-break:break-all">'+e(r.target)+'</td><td><span style="'+pill(r)+'">'+e(r.status)+'</span></td></tr>').join('');
-  document.getElementById('r-count').innerText=data.length.toLocaleString()+' rows';
-  document.getElementById('r-footer').innerText='Showing '+data.length.toLocaleString()+' of '+ALL_RESULTS.length.toLocaleString()+' rows';
-}
-function downloadCSV(){const h='key,field,source,target,status\\n';const r=ALL_RESULTS.map(r=>[r.key,r.field,r.source,r.target,r.status].map(v=>'"'+(v||'').replace(/"/g,'""')+'"').join(',')).join('\\n');const b=new Blob([h+r],{type:'text/csv'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='etl_results_export.csv';a.click();URL.revokeObjectURL(u);}
-<\/script></body></html>`;
+  const fsSection = fieldSummary.length ? '<div class="section"><div class="collapsible-header" onclick="toggleSection(\'fs\')"><h3>📊 Mismatch Field Summary <span style="color:#7a8fa8;font-weight:normal;font-size:12px">— '+fieldSummary.length+' fields</span></h3><span class="chevron">▼</span></div><div class="collapsible-body" id="fs-body"><div class="filter-bar"><input id="fs-search" placeholder="🔍 Filter fields…" oninput="filterFs()"><select id="fs-filter" onchange="filterFs()"><option value="all">All Fields</option><option value="mismatch">Has Mismatches</option><option value="perfect">Perfect (100%)</option><option value="failing">Failing (&lt;70%)</option></select><span class="count-badge" id="fs-count">'+fieldSummary.length+' fields</span></div><div class="table-wrap"><table><thead><tr><th onclick="sortFsCol(\'field\')" style="cursor:pointer">Field ↕</th><th onclick="sortFsCol(\'mismatched\')" style="cursor:pointer;color:#00d4ff">Mismatches ↓</th><th onclick="sortFsCol(\'null_mismatch\')" style="cursor:pointer">Null Mismatches ↕</th><th onclick="sortFsCol(\'matched\')" style="cursor:pointer">Matched ↕</th><th onclick="sortFsCol(\'total\')" style="cursor:pointer">Total ↕</th><th onclick="sortFsCol(\'accuracy\')" style="cursor:pointer">Accuracy ↕</th></tr></thead><tbody id="fs-tbody">'+fsRows+'</tbody></table></div><div style="padding:8px 0;font-size:11px;color:#4b6280" id="fs-footer">Showing '+fieldSummary.length+' fields · '+totalMismatches.toLocaleString()+' total mismatches</div></div></div>' : "";
+  return '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>ETL Report — '+escR(meta.testCase||"N/A")+'</title>\n<style>\n*{box-sizing:border-box;margin:0;padding:0}\nbody{background:#0a0e17;color:#e8f0fe;font-family:\'Segoe UI\',Arial,sans-serif;min-height:100vh;padding-bottom:60px}\n.report-header{background:#0d1220;border-bottom:2px solid #00d4ff;padding:20px 32px;display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap}\n.report-header h1{font-size:22px;font-weight:700;letter-spacing:.5px;margin-bottom:4px}\n.report-header .sub{font-size:12px;color:#7a8fa8}\n.badge{background:#00d4ff;color:#0a0e17;padding:3px 10px;border-radius:3px;font-size:11px;font-weight:bold}\n.COMPLETED{background:#15382166;color:#4ade80;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}\n.FAILED{background:#4c1d1d66;color:#f87171;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}\n.CANCELLED{background:#2d1f0066;color:#fb923c;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}\n.body{max-width:1400px;margin:0 auto;padding:28px 32px}\n.section{margin-bottom:32px}\n.section-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#4b6280;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #1e2d45}\n.metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}\n.metric-card{background:#111827;border:1px solid #1e2d45;border-radius:8px;padding:16px}\n.metric-card .val{font-size:30px;font-weight:800;line-height:1}\n.metric-card .lbl{font-size:11px;color:#7a8fa8;margin-top:6px}\n.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}\n.stat-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#111827;border-radius:4px;font-size:12px}\n.stat-row .s-label{color:#7a8fa8}.stat-row .s-val{font-weight:700}\ntable{width:100%;border-collapse:collapse;font-size:12px}\nth{background:#111827;color:#7a8fa8;padding:9px 12px;text-align:left;border-bottom:1px solid #1e2d45;white-space:nowrap;position:sticky;top:0;z-index:2}\ntd{padding:8px 12px;border-bottom:1px solid #111827}\n.table-wrap{border:1px solid #1e2d45;border-radius:6px;overflow:hidden}\n.results-wrap{max-height:520px;overflow-y:auto;border:1px solid #1e2d45;border-radius:6px}\n.filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}\n.filter-bar input,.filter-bar select{background:#111827;border:1px solid #2a3f5f;color:#fff;padding:6px 10px;border-radius:4px;font-size:12px}\n.filter-bar input{width:220px}\n.count-badge{background:#1e2d45;padding:4px 12px;border-radius:4px;font-size:11px;color:#7a8fa8}\n.export-note{background:#0d2040;border:1px solid #1e2d45;border-radius:6px;padding:12px 16px;font-size:11px;color:#7a8fa8;margin-bottom:20px;display:flex;align-items:center;gap:8px}\n.footer{text-align:center;padding:32px;color:#3a4f6a;font-size:11px;border-top:1px solid #1a2638;margin-top:40px}\n.collapsible-header{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:12px 16px;background:#111827;border-radius:6px 6px 0 0;user-select:none}\n.collapsible-header:hover{background:#141e30}\n.collapsible-header h3{font-size:13px;margin:0}\n.collapsible-header .chevron{color:#00d4ff;font-size:15px;transition:transform .2s}\n.collapsible-header.collapsed .chevron{transform:rotate(-90deg)}\n.collapsible-body{padding:16px;background:#0d1a2e;border:1px solid #1e2d45;border-top:none;border-radius:0 0 6px 6px}\n.collapsible-body.hidden{display:none}\n.csv-btn{background:#1e2d45;color:#e8f0fe;border:none;padding:6px 14px;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold}\n.csv-btn:hover{background:#2a3f5f}\n@media(max-width:700px){.metrics-grid{grid-template-columns:1fr 1fr}.stats-grid{grid-template-columns:1fr}}\n</style></head><body>\n<div class="report-header">\n  <div><h1>📋 ETL Comparison Report</h1><div class="sub">'+escR(meta.testCase||"N/A")+' &nbsp;·&nbsp; '+new Date(meta.date).toLocaleString()+' &nbsp;·&nbsp; Job: <code style="font-size:11px">'+escR(meta.jobId)+'</code></div></div>\n  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="'+meta.status+'">'+escR(meta.status)+'</span><span class="badge">v9.2-BR</span><button class="csv-btn" onclick="downloadCSV()">⬇ Export CSV</button></div>\n</div>\n<div class="body">\n  <div class="export-note">📄 <span>Self-contained offline report &nbsp;·&nbsp; Generated '+generatedAt+' &nbsp;·&nbsp; '+allResults.length.toLocaleString()+' total rows embedded</span></div>\n  <div class="metrics-grid">\n    <div class="metric-card"><div class="val" style="color:'+faColor+'">'+fa+'%</div><div class="lbl">Field Accuracy</div></div>\n    <div class="metric-card"><div class="val" style="color:'+kmrColor+'">'+kmr+'%</div><div class="lbl">Key Match Rate</div></div>\n    <div class="metric-card"><div class="val" style="color:#60a5fa">'+(meta.totalRecords||0).toLocaleString()+'</div><div class="lbl">Total Comparisons</div></div>\n    <div class="metric-card"><div class="val" style="color:#f87171">'+(meta.mismatched||0).toLocaleString()+'</div><div class="lbl">Mismatched Fields</div></div>\n  </div>\n  <div class="section"><div class="section-title">Execution Statistics</div><div class="stats-grid">\n    <div class="stat-row"><span class="s-label">Matched Fields</span><span class="s-val" style="color:#4ade80">'+(meta.matched||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Null Mismatches</span><span class="s-val" style="color:#fb923c">'+(meta.nullMismatches||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Source-Only Keys</span><span class="s-val" style="color:#fb923c">'+(meta.keysSrcOnly||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Target-Only Keys</span><span class="s-val" style="color:#a78bfa">'+(meta.keysTgtOnly||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Keys in Both</span><span class="s-val" style="color:#60a5fa">'+(meta.keysInBoth||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Source Duplicates</span><span class="s-val">'+(meta.sourceDuplicates||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Target Duplicates</span><span class="s-val">'+(meta.targetDuplicates||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Source Row Count</span><span class="s-val">'+(meta.srcRowCount||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Target Row Count</span><span class="s-val">'+(meta.tgtRowCount||0).toLocaleString()+'</span></div>\n  </div></div>\n  '+fsSection+'\n  <div class="section">\n    <div class="collapsible-header" onclick="toggleSection(\'results\')"><h3>🔍 Comparison Results <span style="color:#7a8fa8;font-weight:normal;font-size:12px">— '+allResults.length.toLocaleString()+' rows</span></h3><span class="chevron">▼</span></div>\n    <div class="collapsible-body" id="results-body">\n      <div class="filter-bar"><input id="r-search" placeholder="🔍 Search key or field…" oninput="filterResults()"><select id="r-status" onchange="filterResults()"><option value="">All Status</option><option value="MATCHED">Matched</option><option value="MISMATCH">Mismatch</option><option value="NULL_MISMATCH">Null Mismatch</option><option value="SOURCE_ONLY">Source Only</option><option value="TARGET_ONLY">Target Only</option><option value="SOURCE_DUPLICATE">Source Duplicate</option><option value="TARGET_DUPLICATE">Target Duplicate</option></select><span class="count-badge" id="r-count">'+allResults.length.toLocaleString()+' rows</span></div>\n      <div class="results-wrap"><table><thead><tr><th style="width:25%">Key</th><th style="width:12%">Field</th><th style="width:24%">Source</th><th style="width:24%">Target</th><th style="width:15%">Status</th></tr></thead><tbody id="r-tbody">'+resultRows+'</tbody></table></div>\n      <div style="padding:8px 0;font-size:11px;color:#4b6280" id="r-footer">Showing all '+allResults.length.toLocaleString()+' rows</div>\n    </div>\n  </div>\n</div>\n<div class="footer">ETL Automation Tool v9.2-BR &nbsp;·&nbsp; Report generated '+generatedAt+'<br>Self-contained offline snapshot. Data reflects the state at time of export.</div>\n<' + 'script>\nconst ALL_RESULTS='+JSON.stringify(allResults)+';\nconst FIELD_SUMMARY='+JSON.stringify(fieldSummary)+';\nfunction toggleSection(id){const b=document.getElementById(id+\'-body\');b.previousElementSibling.classList.toggle(\'collapsed\');b.classList.toggle(\'hidden\');}\nlet fsSortCol=\'mismatched\',fsSortAsc=false;\nfunction filterFs(){const q=(document.getElementById(\'fs-search\')?.value||\'\').toLowerCase();const fv=document.getElementById(\'fs-filter\')?.value||\'all\';let data=FIELD_SUMMARY.filter(f=>{if(q&&!f.field.toLowerCase().includes(q))return false;if(fv===\'mismatch\'&&f.mismatched===0&&f.null_mismatch===0)return false;if(fv===\'perfect\'&&f.accuracy<100)return false;if(fv===\'failing\'&&f.accuracy>=70)return false;return true;});data.sort((a,b)=>{let av=a[fsSortCol],bv=b[fsSortCol];if(typeof av===\'string\'){av=av.toLowerCase();bv=bv.toLowerCase();}return fsSortAsc?(av>bv?1:-1):(av<bv?1:-1);});const totalMm=data.reduce((s,f)=>s+f.mismatched+f.null_mismatch,0);document.getElementById(\'fs-tbody\').innerHTML=data.map(f=>{const bc=f.accuracy===100?\'#4ade8022;color:#4ade80\':f.accuracy>=70?\'#f59e0b22;color:#f59e0b\':\'#f8717122;color:#f87171\';const pct=totalMm>0?((f.mismatched+f.null_mismatch)/totalMm*100).toFixed(1):\'0.0\';const bar=\'<div style="display:inline-block;background:#1e2d45;border-radius:3px;height:6px;width:60px;overflow:hidden;vertical-align:middle;margin-right:6px"><div style="height:100%;width:\'+f.accuracy+\'%;background:\'+(f.accuracy===100?\'#4ade80\':f.accuracy>=70?\'#f59e0b\':\'#ef4444\')+\'"></div></div>\';return \'<tr><td style="color:#e8f0fe">\'+f.field+\'</td><td style="color:\'+(f.mismatched>0?\'#f87171\':\'#4b6280\')+\'">\'+f.mismatched.toLocaleString()+(f.mismatched>0?\'<span style="font-size:10px;color:#4b6280;margin-left:4px">\'+pct+\'%</span>\':\'\')+\'</td><td style="color:\'+(f.null_mismatch>0?\'#fb923c\':\'#4b6280\')+\'">\'+f.null_mismatch.toLocaleString()+\'</td><td style="color:#4ade80">\'+f.matched.toLocaleString()+\'</td><td style="color:#7a8fa8">\'+f.total.toLocaleString()+\'</td><td>\'+bar+\'<span style="background:\'+bc+\';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">\'+f.accuracy+\'%</span></td></tr>\';}).join(\'\');document.getElementById(\'fs-count\').innerText=data.length+\' fields\';document.getElementById(\'fs-footer\').innerText=\'Showing \'+data.length+\' of \'+FIELD_SUMMARY.length+\' fields \\xb7 \'+totalMm.toLocaleString()+\' total mismatches\';}\nfunction sortFsCol(col){fsSortAsc=fsSortCol===col?!fsSortAsc:col===\'field\';fsSortCol=col;filterFs();}\nconst SC={MATCHED:\'#4ade80\',MISMATCH:\'#f87171\',NULL_MISMATCH:\'#fb923c\',SOURCE_ONLY:\'#a78bfa\',TARGET_ONLY:\'#c084fc\',SOURCE_DUPLICATE:\'#facc15\',TARGET_DUPLICATE:\'#fbbf24\'};\nfunction filterResults(){const q=(document.getElementById(\'r-search\').value||\'\').toLowerCase();const st=document.getElementById(\'r-status\').value;const data=ALL_RESULTS.filter(r=>(!st||r.status===st)&&(!q||r.key?.toLowerCase().includes(q)||r.field?.toLowerCase().includes(q)));const rb=r=>r.status===\'MATCHED\'?\'#0d2318\':r.status===\'MISMATCH\'?\'#2a0f0f\':r.status===\'NULL_MISMATCH\'?\'#2a1a00\':\'#1a1a2e\';const pill=r=>{const c=SC[r.status]||\'#e8f0fe\';return \'background:\'+c+\'22;color:\'+c+\';padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold;display:inline-block\';};function e(v){if(v==null)return\'\';const d=document.createElement(\'div\');d.textContent=String(v);return d.innerHTML;}document.getElementById(\'r-tbody\').innerHTML=data.map(r=>\'<tr style="background:\'+rb(r)+\'"><td style="font-size:11px;word-break:break-all">\'+e(r.key)+\'</td><td>\'+e(r.field)+\'</td><td style="word-break:break-all">\'+e(r.source)+\'</td><td style="word-break:break-all">\'+e(r.target)+\'</td><td><span style="\'+pill(r)+\'">\'+e(r.status)+\'</span></td></tr>\').join(\'\');document.getElementById(\'r-count\').innerText=data.length.toLocaleString()+\' rows\';document.getElementById(\'r-footer\').innerText=\'Showing \'+data.length.toLocaleString()+\' of \'+ALL_RESULTS.length.toLocaleString()+\' rows\';}\nfunction downloadCSV(){const h=\'key,field,source,target,status\\n\';const csvEsc=v=>\'"\'+String(v||\'\').replace(/"/g,\'\'\'\')+\'"\';const r=ALL_RESULTS.map(r=>[r.key,r.field,r.source,r.target,r.status].map(csvEsc).join(\',\')).join(\'\\n\');const b=new Blob([h+r],{type:\'text/csv\'});const u=URL.createObjectURL(b);const a=document.createElement(\'a\');a.href=u;a.download=\'etl_results_export.csv\';a.click();URL.revokeObjectURL(u);}\n<' + '/script></body></html>';
 }
 
-/* ── INIT ── */
+/* INIT */
 refreshProfileDropdown();
 </script>
 </body>
