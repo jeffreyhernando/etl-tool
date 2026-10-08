@@ -227,6 +227,50 @@ tr.bad  td{background:#2a0f0f}
   transition:opacity .25s,transform .25s;z-index:9999;
 }
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── v9.3 OBSERVABILITY ── */
+.gate-pill{display:inline-block;padding:2px 9px;border-radius:10px;font-size:10px;font-weight:bold}
+.gate-PASS{background:#153821;color:#4ade80}
+.gate-FAIL{background:#4c1d1d;color:#f87171}
+.gate-WARNING{background:#2d1f00;color:#fb923c}
+.alert-dot{color:#f87171;font-weight:bold;cursor:help;margin-left:6px}
+.trend-panel{margin:0 24px 4px;background:#0d1a2e;border:1px solid #1e2d45;border-radius:8px;overflow:hidden}
+.trend-head{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;background:#111827;cursor:pointer;user-select:none}
+.trend-head h2{font-size:15px;margin:0}
+.trend-head .chev{color:#00d4ff;font-size:16px;transition:transform .2s}
+.trend-head.collapsed .chev{transform:rotate(-90deg)}
+.trend-body{padding:16px 18px}
+.trend-body.hidden{display:none}
+.trend-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.trend-controls select{background:#1e2d45;border:1px solid #2a3f5f;color:#fff;padding:7px 10px;border-radius:4px;font-size:13px;min-width:260px}
+.trend-legend{display:flex;gap:16px;font-size:12px;color:#7a8fa8;flex-wrap:wrap}
+.trend-legend span{display:inline-flex;align-items:center;gap:5px}
+.trend-legend i{width:14px;height:3px;border-radius:2px;display:inline-block}
+.trend-chart-wrap{overflow-x:auto;background:#0a1120;border:1px solid #1e2d45;border-radius:6px;padding:10px}
+.trend-stat{display:inline-flex;flex-direction:column;background:#111827;border:1px solid #1e2d45;border-radius:6px;padding:8px 14px;margin-right:10px}
+.trend-stat b{font-size:18px}
+.trend-stat span{font-size:10px;color:#7a8fa8}
+.alerts-inline{border:1px solid #5c2d2d;border-radius:6px;margin-bottom:20px;overflow:hidden}
+.alerts-inline .ah{background:#2a1010;padding:9px 14px;font-weight:bold;color:#fca5a5;font-size:13px}
+.alerts-inline .ai{display:flex;gap:10px;padding:9px 14px;border-top:1px solid #1e2d45;font-size:12px;background:#160c0c;align-items:flex-start}
+.alerts-inline .ai .icn{flex-shrink:0}
+.alerts-inline .ai.sev-high .icn{color:#f87171}
+.alerts-inline .ai.sev-medium .icn{color:#fb923c}
+.alerts-inline .ai .t{font-weight:bold;color:#e8f0fe}
+.alerts-inline .ai .d{color:#9fb3c8;margin-top:2px}
+.rc-box{background:#0d1a2e;border:1px solid #1e2d45;border-radius:6px;margin-bottom:20px;overflow:hidden}
+.rc-hd{display:flex;align-items:center;justify-content:space-between;padding:11px 16px;background:#111827;cursor:pointer;user-select:none}
+.rc-hd h3{font-size:13px;margin:0}
+.rc-hd .chev{color:#00d4ff;font-size:15px;transition:transform .2s}
+.rc-hd.collapsed .chev{transform:rotate(-90deg)}
+.rc-bd{padding:14px 16px}
+.rc-bd.hidden{display:none}
+.rc-line{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #111827;font-size:12px}
+.rc-line .b{color:#00d4ff;flex-shrink:0}
+.rc-grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px}
+.rc-grid2 h5{font-size:11px;color:#7a8fa8;text-transform:uppercase;letter-spacing:.05em;margin:0 0 6px}
+.rc-grid2 table{font-size:11px}
+.rc-grid2 td{border:none;border-bottom:1px solid #111827;padding:4px 6px}
 </style>
 </head>
 <body>
@@ -238,7 +282,7 @@ tr.bad  td{background:#2a0f0f}
       <div class="dot" id="serverDot"></div>
       <span id="serverLabel">Connecting…</span>
     </div>
-    <span class="badge">v9.1</span>
+    <span class="badge">v9.3</span>
   </div>
 </header>
 
@@ -266,6 +310,30 @@ tr.bad  td{background:#2a0f0f}
   </select>
   <button onclick="loadHistory()">⟳ Refresh</button>
   <button class="btn-sec" onclick="window.location.href='index.html'">← Back to Tool</button>
+</div>
+
+<!-- ══════════════════ TREND INTELLIGENCE ══════════════════ -->
+<div class="trend-panel">
+  <div class="trend-head" id="trendHead" onclick="toggleTrend()">
+    <h2>📈 Trend Intelligence <span style="font-size:12px;color:#7a8fa8;font-weight:normal">— accuracy & mismatches over time</span></h2>
+    <span class="chev">▼</span>
+  </div>
+  <div class="trend-body" id="trendBody">
+    <div class="trend-controls">
+      <label style="font-size:12px;color:#7a8fa8">Test case:</label>
+      <select id="trendTestCase" onchange="loadTrend()"></select>
+      <div class="trend-legend">
+        <span><i style="background:#34d399"></i> Field Accuracy</span>
+        <span><i style="background:#a78bfa"></i> Key Match Rate</span>
+        <span><i style="background:#f87171"></i> Mismatches</span>
+        <span style="color:#f87171">● gate FAIL</span>
+      </div>
+    </div>
+    <div id="trendStats" style="margin-bottom:12px"></div>
+    <div class="trend-chart-wrap" id="trendChart">
+      <div class="loading" style="padding:20px">Select a test case to see its trend…</div>
+    </div>
+  </div>
 </div>
 
 <div class="table-wrap">
@@ -408,12 +476,18 @@ function renderTable(data){
     const fa  = h.fieldAccuracy ?? h.accuracy ?? 0;
     const kmr = h.keyMatchRate  ?? 0;
     const faClass = fa>=90?"":fa>=70?"warn":"bad";
+    const gs = h.gateStatus || "";
+    const gateCell = gs ? `<span class="gate-pill gate-${gs}">${gs}</span>` : `<span style="color:#3a4f6a">—</span>`;
+    const alerts = Array.isArray(h.alerts) ? h.alerts : [];
+    const alertDot = alerts.length
+      ? `<span class="alert-dot" title="${esc(alerts.map(a=>a.title).join(' · '))}">⚠${alerts.length}</span>` : "";
     return `
       <tr onclick="openDetail('${h.jobId}')" style="cursor:pointer">
         <td>${esc(h.testCase||"–")}</td>
         <td style="font-family:monospace;color:#7a8fa8">${h.jobId.slice(0,8)}…</td>
         <td>${new Date(h.date).toLocaleString()}</td>
-        <td><span class="status-pill ${h.status}">${h.status}</span></td>
+        <td><span class="status-pill ${h.status}">${h.status}</span>${alertDot}</td>
+        <td>${gateCell}</td>
         <td><div class="accuracy-bar"><div class="bar-bg"><div class="bar-fill ${faClass}" style="width:${fa}%"></div></div><span>${fa}%</span></div></td>
         <td><div class="accuracy-bar"><div class="bar-bg"><div class="bar-fill" style="width:${kmr}%;background:#a78bfa"></div></div><span>${kmr}%</span></div></td>
         <td>${(h.totalRecords||0).toLocaleString()}</td>
@@ -430,7 +504,7 @@ function renderTable(data){
   document.getElementById("tableContent").innerHTML = `
     <table>
       <thead><tr>
-        <th>Test Case</th><th>Job ID</th><th>Date</th><th>Status</th>
+        <th>Test Case</th><th>Job ID</th><th>Date</th><th>Status</th><th>Gate</th>
         <th>Field Accuracy</th><th>Key Match Rate</th>
         <th>Total Rows</th><th>Src Rows</th><th>Tgt Rows</th><th>Actions</th>
       </tr></thead>
@@ -968,9 +1042,193 @@ function downloadCSV(){const h='key,field,source,target,status\\n';const r=ALL_R
 <\/script></body></html>`;
 }
 
+// ═══════════════════════════════════════════════════════════
+// v9.3 TREND INTELLIGENCE
+// ═══════════════════════════════════════════════════════════
+function toggleTrend(){
+  document.getElementById("trendBody").classList.toggle("hidden");
+  document.getElementById("trendHead").classList.toggle("collapsed");
+}
+async function loadTrendList(){
+  try{
+    const res = await fetch(API+"/db/trends");
+    const list = await res.json();
+    const sel = document.getElementById("trendTestCase");
+    if(!Array.isArray(list) || !list.length){
+      sel.innerHTML = '<option value="">No completed runs yet</option>';
+      document.getElementById("trendChart").innerHTML =
+        '<div class="loading" style="padding:20px">Run some comparisons to build trend history.</div>';
+      return;
+    }
+    const prev = sel.value;
+    sel.innerHTML = list.map(t=>`<option value="${esc(t.testCase)}">${esc(t.testCase)} — ${t.runs} run${t.runs>1?"s":""}</option>`).join("");
+    if (prev && list.some(t=>t.testCase===prev)) sel.value = prev;
+    loadTrend();
+  } catch(e){
+    document.getElementById("trendChart").innerHTML =
+      `<div class="loading" style="padding:20px;color:#f87171">Could not load trends: ${e.message}</div>`;
+  }
+}
+async function loadTrend(){
+  const tc = document.getElementById("trendTestCase").value;
+  if(!tc){ return; }
+  const chart = document.getElementById("trendChart");
+  chart.innerHTML = '<div class="loading" style="padding:20px">Loading trend…</div>';
+  try{
+    const res = await fetch(API+"/db/trend?testCase="+encodeURIComponent(tc)+"&limit=50");
+    const data = await res.json();
+    const pts = data.points || [];
+    if(pts.length < 2){
+      chart.innerHTML = '<div class="loading" style="padding:20px">Only '+pts.length+' run for this test case — need at least 2 to draw a trend.</div>';
+      document.getElementById("trendStats").innerHTML = "";
+      return;
+    }
+    renderTrendStats(pts);
+    chart.innerHTML = buildTrendChart(pts);
+  } catch(e){
+    chart.innerHTML = `<div class="loading" style="padding:20px;color:#f87171">Failed: ${e.message}</div>`;
+  }
+}
+function renderTrendStats(pts){
+  const last = pts[pts.length-1], prev = pts[pts.length-2];
+  const dFa  = (last.fieldAccuracy - prev.fieldAccuracy).toFixed(1);
+  const dMm  = last.mismatched - prev.mismatched;
+  const arrow = v => v>0?"▲":v<0?"▼":"▬";
+  const col   = (v,good) => v===0?"#7a8fa8":(v>0)===good?"#4ade80":"#f87171";
+  document.getElementById("trendStats").innerHTML =
+    `<div class="trend-stat"><b style="color:${last.fieldAccuracy>=90?'#4ade80':last.fieldAccuracy>=70?'#f59e0b':'#f87171'}">${last.fieldAccuracy}%</b><span>Latest Field Accuracy</span></div>`
+   +`<div class="trend-stat"><b style="color:${col(dFa,true)}">${arrow(dFa)} ${Math.abs(dFa)} pts</b><span>vs previous run</span></div>`
+   +`<div class="trend-stat"><b style="color:${col(-dMm,true)}">${arrow(dMm)} ${Math.abs(dMm).toLocaleString()}</b><span>Mismatch change</span></div>`
+   +`<div class="trend-stat"><b style="color:#60a5fa">${pts.length}</b><span>Runs charted</span></div>`;
+}
+function buildTrendChart(pts){
+  const W = Math.max(680, pts.length*70), H = 260;
+  const padL=44, padR=20, padT=16, padB=52;
+  const plotW = W-padL-padR, plotH = H-padT-padB;
+  const n = pts.length;
+  const x = i => padL + (n===1?plotW/2:(i/(n-1))*plotW);
+  const yPct = v => padT + plotH - (Math.max(0,Math.min(100,v))/100)*plotH;   // 0-100 scale
+  const maxMm = Math.max(1, ...pts.map(p=>p.mismatched));
+  const yMm  = v => padT + plotH - (v/maxMm)*plotH;
+  const esc2 = s => esc(String(s));
+
+  // gridlines + y labels (0,25,50,75,100)
+  let grid="";
+  [0,25,50,75,100].forEach(v=>{
+    const yy=yPct(v);
+    grid+=`<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="#1a2638" stroke-width="1"/>`;
+    grid+=`<text x="${padL-6}" y="${yy+3}" fill="#4b6280" font-size="9" text-anchor="end">${v}%</text>`;
+  });
+
+  const linePath = (accessor,yFn) => pts.map((p,i)=>`${i===0?"M":"L"}${x(i).toFixed(1)},${yFn(accessor(p)).toFixed(1)}`).join(" ");
+  const faPath  = linePath(p=>p.fieldAccuracy, yPct);
+  const kmrPath = linePath(p=>p.keyMatchRate,  yPct);
+  const mmPath  = linePath(p=>p.mismatched,    yMm);
+
+  // mismatch bars (light) behind lines
+  const barW = Math.min(26, plotW/n*0.5);
+  let bars="";
+  pts.forEach((p,i)=>{
+    const bh = padT+plotH - yMm(p.mismatched);
+    bars+=`<rect x="${(x(i)-barW/2).toFixed(1)}" y="${yMm(p.mismatched).toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0,bh).toFixed(1)}" fill="#f8717118"/>`;
+  });
+
+  // points + hover tooltips + gate-fail markers + x labels
+  let dots="", xlabels="";
+  pts.forEach((p,i)=>{
+    const gateFail = p.gateStatus==="FAIL";
+    const cx=x(i), cy=yPct(p.fieldAccuracy);
+    const d=new Date(p.date);
+    const label=(d.getMonth()+1)+"/"+d.getDate();
+    const tip=`${p.date}\nField Acc: ${p.fieldAccuracy}%\nKey Match: ${p.keyMatchRate}%\nMismatches: ${p.mismatched.toLocaleString()}${p.gateStatus?"\nGate: "+p.gateStatus:""}`;
+    dots+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${gateFail?5:3.5}" fill="${gateFail?"#f87171":"#34d399"}" stroke="#0a1120" stroke-width="1"><title>${esc2(tip)}</title></circle>`;
+    dots+=`<circle cx="${cx.toFixed(1)}" cy="${yPct(p.keyMatchRate).toFixed(1)}" r="3" fill="#a78bfa"><title>${esc2(tip)}</title></circle>`;
+    xlabels+=`<text x="${cx.toFixed(1)}" y="${H-padB+16}" fill="#4b6280" font-size="9" text-anchor="middle" transform="rotate(35 ${cx.toFixed(1)} ${H-padB+16})">${label}</text>`;
+  });
+
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">
+    ${grid}${bars}
+    <path d="${mmPath}" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.7"/>
+    <path d="${kmrPath}" fill="none" stroke="#a78bfa" stroke-width="2"/>
+    <path d="${faPath}" fill="none" stroke="#34d399" stroke-width="2.5"/>
+    ${dots}${xlabels}
+    <text x="${padL}" y="${H-6}" fill="#4b6280" font-size="10">Mismatch line uses its own scale (peak ${maxMm.toLocaleString()}). Hover points for details.</text>
+  </svg>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// v9.3 DETAIL PANEL: gate badge, alerts, root cause
+// ═══════════════════════════════════════════════════════════
+function gatePillHtml(gs){
+  if(!gs) return "";
+  const icon = gs==="PASS"?"✓ ":gs==="FAIL"?"✕ ":"⚠ ";
+  return `<span class="gate-pill gate-${gs}" style="font-size:12px;padding:3px 12px">${icon}GATE ${gs}</span>`;
+}
+function alertsInlineHtml(alerts){
+  if(!alerts || !alerts.length) return "";
+  const items = alerts.map(a=>{
+    const icon = a.kind==="gate"?"🛡️":"⚠";
+    return `<div class="ai sev-${a.severity||'medium'}"><span class="icn">${icon}</span><div><div class="t">${esc(a.title||'Alert')}</div><div class="d">${esc(a.detail||'')}</div></div></div>`;
+  }).join("");
+  return `<div class="alerts-inline"><div class="ah">🚨 ${alerts.length} alert${alerts.length>1?"s":""} on this run</div>${items}</div>`;
+}
+
+let panelRcField = "";
+function togglePanelRC(){
+  document.getElementById("panelRcBody").classList.toggle("hidden");
+  document.getElementById("panelRcHd").classList.toggle("collapsed");
+}
+function populatePanelRC(){
+  const box = document.getElementById("panelRcBox");
+  const sel = document.getElementById("panelRcSelect");
+  if(!box || !sel) return;
+  const withMismatch = fsData.filter(f=>f.mismatched>0||f.null_mismatch>0);
+  if(!withMismatch.length){ box.style.display="none"; return; }
+  box.style.display="block";
+  sel.innerHTML = withMismatch.map(f=>`<option value="${esc(f.field)}">${esc(f.field)} (${(f.mismatched+f.null_mismatch).toLocaleString()} mismatches)</option>`).join("");
+  sel.value = withMismatch[0].field;
+  panelRunRC();
+}
+async function panelRunRC(){
+  const field = document.getElementById("panelRcSelect").value;
+  if(!field || !activeJobId) return;
+  const content = document.getElementById("panelRcContent");
+  content.innerHTML = '<p style="color:#7a8fa8;font-size:12px">Analyzing…</p>';
+  try{
+    const res = await fetch(API+"/db/root-cause/"+activeJobId+"?field="+encodeURIComponent(field));
+    const d = await res.json();
+    if(d.detail) throw new Error(JSON.stringify(d.detail));
+    renderPanelRC(d);
+  } catch(e){ content.innerHTML = `<p style="color:#f87171;font-size:12px">Analysis failed: ${e.message}</p>`; }
+}
+function renderPanelRC(d){
+  const content = document.getElementById("panelRcContent");
+  if(!d.totalMismatches){ content.innerHTML = '<p style="color:#4ade80;font-size:12px">✓ No mismatches for this field.</p>'; return; }
+  const insights = (d.insights||[]).map(i=>`<div class="rc-line"><span class="b">▸</span><span>${esc(i)}</span></div>`).join("");
+  const tbl = (title,arr)=>{
+    if(!arr||!arr.length) return `<div><h5>${title}</h5><p style="color:#4b6280;font-size:11px">—</p></div>`;
+    const rows = arr.map(r=>{
+      const label = r.value!=null?esc(String(r.value).slice(0,50)):(r.prefix!=null?esc(r.prefix):"");
+      return `<tr><td>${label}</td><td style="text-align:right;color:#7a8fa8">${r.count.toLocaleString()}</td><td style="text-align:right;color:#00d4ff">${r.pct}%</td></tr>`;
+    }).join("");
+    return `<div><h5>${title}</h5><table><tbody>${rows}</tbody></table></div>`;
+  };
+  content.innerHTML =
+    `<div style="background:#111827;border-radius:6px;padding:10px 14px;margin-bottom:12px">${insights}</div>`
+   +`<div class="rc-grid2">`
+   + tbl("Top affected key prefixes", d.keyPrefixes)
+   + tbl("Most common source values", d.topSource)
+   + tbl("Most common target values", d.topTarget)
+   +`<div><h5>Null direction</h5><table><tbody>`
+     +`<tr><td>Source NULL (target has value)</td><td style="text-align:right;color:#7a8fa8">${((d.nullDirection&&d.nullDirection.sourceNull)||0).toLocaleString()}</td></tr>`
+     +`<tr><td>Target NULL (source has value)</td><td style="text-align:right;color:#7a8fa8">${((d.nullDirection&&d.nullDirection.targetNull)||0).toLocaleString()}</td></tr>`
+   +`</tbody></table></div></div>`;
+}
+
 // ── INIT ───────────────────────────────────────────────────────────────
 loadHistory();
-setInterval(() => loadHistory(true), 30000);
+loadTrendList();
+setInterval(() => { loadHistory(true); loadTrendList(); }, 30000);
 </script>
 </body>
 </html>

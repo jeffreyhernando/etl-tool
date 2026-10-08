@@ -110,13 +110,57 @@ th{background:#1e2d45}
 .save-name-input{width:160px !important;padding:6px 10px;font-size:12px;margin:0 !important}
 .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);background:#00d4ff;color:#0a0e17;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:bold;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:9999;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* ── v9.3 OBSERVABILITY ── */
+.profile-wrap{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px}
+.profile-col h4{font-size:13px;margin:0 0 8px}
+.profile-table{width:100%;border-collapse:collapse;font-size:11px}
+.profile-table th{background:#111827;color:#7a8fa8;padding:6px 8px;text-align:left;position:sticky;top:0;z-index:2}
+.profile-table td{padding:5px 8px;border-bottom:1px solid #111827;vertical-align:top}
+.profile-null-bar{display:inline-block;height:5px;border-radius:3px;background:#1e2d45;width:50px;overflow:hidden;vertical-align:middle;margin-right:5px}
+.profile-null-fill{height:100%;background:#fb923c}
+.prof-scroll{max-height:420px;overflow:auto;border:1px solid #1e2d45;border-radius:6px;scrollbar-width:thin;scrollbar-color:#2a3f5f #0d1a2e}
+.prof-top{color:#7a8fa8;font-size:10px}
+.gate-section{background:#0d1a2e;border:1px solid #1e2d45;border-radius:6px;margin-top:24px;padding:16px}
+.gate-section h3{font-size:14px;color:#00d4ff;margin:0 0 4px}
+.gate-row{display:grid;grid-template-columns:1.4fr 1fr 1fr 0.8fr 0.9fr 0.9fr 40px;gap:8px;align-items:center;margin-bottom:8px}
+.gate-row select,.gate-row input{margin:0;padding:6px 8px;font-size:12px;width:100%;box-sizing:border-box}
+.gate-list{margin-top:12px}
+.gate-item{display:flex;align-items:center;gap:10px;background:#111827;border:1px solid #1e2d45;border-radius:5px;padding:8px 12px;margin-bottom:6px;font-size:12px}
+.gate-item .gate-sev{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:bold}
+.sev-fail{background:#4c1d1d;color:#f87171}
+.sev-warn{background:#2d1f00;color:#fb923c}
+.gate-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:6px;font-weight:bold;font-size:13px;margin-left:10px}
+.gate-PASS{background:#153821;color:#4ade80;border:1px solid #2a5a3a}
+.gate-FAIL{background:#4c1d1d;color:#f87171;border:1px solid #7c2d2d}
+.gate-WARNING{background:#2d1f00;color:#fb923c;border:1px solid #5c3d00}
+.alert-banner{border-radius:6px;margin-top:15px;overflow:hidden;border:1px solid #5c2d2d}
+.alert-banner-head{background:#2a1010;padding:10px 16px;font-weight:bold;color:#fca5a5;font-size:13px}
+.alert-item{display:flex;gap:10px;align-items:flex-start;padding:10px 16px;border-top:1px solid #1e2d45;font-size:12px;background:#160c0c}
+.alert-item .a-icon{font-size:15px;flex-shrink:0}
+.alert-item.sev-high .a-icon{color:#f87171}
+.alert-item.sev-medium .a-icon{color:#fb923c}
+.alert-item .a-title{font-weight:bold;color:#e8f0fe}
+.alert-item .a-detail{color:#9fb3c8;margin-top:2px}
+.insights-box{background:#0d1a2e;border:1px solid #1e2d45;border-radius:6px;margin-top:20px;overflow:hidden}
+.insights-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#111827;cursor:pointer;user-select:none}
+.insights-head h3{font-size:13px;margin:0}
+.insights-head .toggle-icon{color:#00d4ff;font-size:16px;transition:transform .2s}
+.insights-head.collapsed .toggle-icon{transform:rotate(-90deg)}
+.insights-body{padding:14px 16px}
+.insights-body.hidden{display:none}
+.insight-line{display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:1px solid #111827;font-size:12px;color:#e8f0fe}
+.insight-line .i-bullet{color:#00d4ff;flex-shrink:0}
+.rc-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px}
+.rc-block h5{font-size:11px;color:#7a8fa8;text-transform:uppercase;letter-spacing:.05em;margin:0 0 6px}
+.rc-block table{margin-top:0;font-size:11px}
+.rc-block td{border:none;border-bottom:1px solid #111827;padding:4px 6px}
 </style>
 </head>
 <body>
 
 <header>
 ETL TEST AUTOMATION TOOL
-<span class="version-badge">v9.2</span>
+<span class="version-badge">v9.3</span>
 </header>
 
 <div class="toast" id="toast"></div>
@@ -184,8 +228,16 @@ ETL TEST AUTOMATION TOOL
 <h2>Select Tables</h2>
 <h3>Source Tables</h3><div id="srcTables"></div>
 <h3>Target Tables</h3><div id="tgtTables"></div>
-<button class="btn-secondary" onclick="show(1)">Back</button>
-<button onclick="goColumns()">Next</button>
+<div style="margin-top:14px">
+  <button class="btn-secondary" onclick="profileTables()" id="profileBtn">🔬 Profile Selected Tables</button>
+  <span style="font-size:11px;color:#7a8fa8;margin-left:8px">Inspect nulls, distinct values & top values before comparing.</span>
+</div>
+<div id="profileError" class="error-message" style="display:none;margin-top:12px"></div>
+<div id="profilePanel" class="profile-wrap" style="display:none"></div>
+<div style="margin-top:16px">
+  <button class="btn-secondary" onclick="show(1)">Back</button>
+  <button onclick="goColumns()">Next</button>
+</div>
 </div>
 
 <!-- STEP 3 -->
@@ -232,8 +284,12 @@ ETL TEST AUTOMATION TOOL
           onclick="document.getElementById('previewPanel').style.display='none'">✕ Close Preview</button>
 </div>
 
+<div class="control-buttons" style="margin-bottom:10px">
+  <button class="btn-secondary" id="autoMapKeysBtn" onclick="autoMapKeys()">🪄 Auto Map Keys</button>
+  <span style="font-size:11px;color:#4b6280;margin-left:8px">💡 Suggests likely key columns (ID/Key/NPI/TaxID/SSN/MRN); uncheck any you don't want used as a key</span>
+</div>
 <table>
-  <thead><tr><th>Source</th><th>Target</th></tr></thead>
+  <thead><tr><th>Include</th><th>Source</th><th>Target</th></tr></thead>
   <tbody id="keys"></tbody>
 </table>
 <h3 style="margin-top:30px">Dynamic Filters (Optional)</h3>
@@ -254,19 +310,63 @@ ETL TEST AUTOMATION TOOL
 <div id="step5" class="panel">
 <h2>Comparison Rules <span style="font-size:12px;color:#00d4ff;margin-left:10px;background:#0d2040;padding:2px 8px;border-radius:3px">v9.2-BR</span></h2>
 <div class="control-buttons" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+  <button class="btn-secondary" id="autoMapRulesBtn" onclick="autoMapRules()" style="padding:5px 12px;font-size:12px;margin:0">🪄 Auto Map Rules</button>
   <span style="font-size:12px;color:#7a8fa8">Quick apply:</span>
   <button class="btn-secondary" onclick="setAllRules('address_normalized_strict')" style="padding:5px 12px;font-size:12px;margin:0">🏘️ Addresses</button>
   <button class="btn-secondary" onclick="setAllRules('first_name_with_initial')" style="padding:5px 12px;font-size:12px;margin:0">👤 Names</button>
   <button class="btn-secondary" onclick="setAllRules('numeric_flexible')" style="padding:5px 12px;font-size:12px;margin:0">☎️ Phone/Numbers</button>
   <button class="btn-secondary" onclick="setAllRules('exact')" style="padding:5px 12px;font-size:12px;margin:0">Exact Match</button>
-  <span style="font-size:11px;color:#4b6280;margin-left:8px">💡 Boolean fields are automatically detected</span>
+  <span style="font-size:11px;color:#4b6280;margin-left:8px">💡 Boolean fields are auto-detected; Auto Map Rules also samples joined records to spot case-only mismatches</span>
 </div>
 <table>
   <thead><tr><th>Source</th><th>Target</th><th>Rule</th></tr></thead>
   <tbody id="mapping"></tbody>
 </table>
+
+<div class="gate-section">
+  <h3>🛡️ Quality Gates (Data Contracts)</h3>
+  <p style="font-size:12px;color:#7a8fa8;margin:0 0 12px">
+    Define rules that must hold. After each run, the job is stamped
+    <span class="gate-badge gate-PASS" style="padding:1px 8px;font-size:11px">PASS</span>
+    <span class="gate-badge gate-WARNING" style="padding:1px 8px;font-size:11px">WARNING</span>
+    <span class="gate-badge gate-FAIL" style="padding:1px 8px;font-size:11px">FAIL</span>
+    against them. Rules for test case <strong id="gateTestCaseLabel" style="color:#00d4ff">(current)</strong> plus any global rules apply.
+  </p>
+  <div class="gate-row" style="font-size:10px;color:#7a8fa8;text-transform:uppercase;letter-spacing:.04em">
+    <div>Metric</div><div>Field (optional)</div><div>Condition</div><div>Threshold</div><div>Severity</div><div>Scope</div><div></div>
+  </div>
+  <div class="gate-row">
+    <select id="gateMetric" onchange="onGateMetricChange()">
+      <option value="field_accuracy">Field Accuracy (%)</option>
+      <option value="key_match_rate">Key Match Rate (%)</option>
+      <option value="null_rate">Null Mismatch Rate (%)</option>
+      <option value="mismatch_count">Mismatch Count</option>
+      <option value="row_count_diff_pct">Row Count Diff (%)</option>
+    </select>
+    <input id="gateField" type="text" placeholder="e.g. address (blank = overall)">
+    <select id="gateOperator">
+      <option value="gte">must be ≥</option>
+      <option value="lte">must be ≤</option>
+      <option value="gt">must be &gt;</option>
+      <option value="lt">must be &lt;</option>
+      <option value="eq">must equal</option>
+    </select>
+    <input id="gateThreshold" type="text" placeholder="90">
+    <select id="gateSeverity">
+      <option value="fail">Fail</option>
+      <option value="warn">Warn</option>
+    </select>
+    <select id="gateScope">
+      <option value="case">This case</option>
+      <option value="global">All cases</option>
+    </select>
+    <button onclick="addGate()" style="margin:0;padding:6px 8px">+ Add</button>
+  </div>
+  <div class="gate-list" id="gateList"><p style="color:#4b6280;font-size:12px">Loading gates…</p></div>
+</div>
+
 <button class="btn-secondary" onclick="show(4)">Back</button>
-<button onclick="show(6)">Next</button>
+<button onclick="goToRun()">Next</button>
 </div>
 
 <!-- STEP 6 -->
@@ -298,7 +398,7 @@ ETL TEST AUTOMATION TOOL
 
 <div id="summary" class="summary-box" style="display:none">
   <div class="summary-box-header" id="summaryHeader" onclick="toggleSummary()">
-    <h3>📋 Execution Summary</h3>
+    <h3>📋 Execution Summary <span id="gateBadgeSlot"></span></h3>
     <span class="toggle-icon">▼</span>
   </div>
   <div class="summary-box-body" id="summaryBody">
@@ -316,6 +416,8 @@ ETL TEST AUTOMATION TOOL
     <div class="filter-badges" id="activeFilters"></div>
   </div>
 </div>
+
+<div id="alertBanner" class="alert-banner" style="display:none"></div>
 
 <div class="field-summary-box" id="fieldSummaryBox" style="display:none">
   <div class="field-summary-header" id="fieldSummaryHeader" onclick="toggleFieldSummary()">
@@ -350,6 +452,20 @@ ETL TEST AUTOMATION TOOL
       <span id="fieldSummaryFooterLeft">💡 Click a field name to instantly filter results to that field</span>
       <span id="fieldSummaryFooterRight"></span>
     </div>
+  </div>
+</div>
+
+<div class="insights-box" id="insightsBox" style="display:none">
+  <div class="insights-head" id="insightsHead" onclick="toggleInsights()">
+    <h3>🔍 Smart Insights — Root Cause Analysis <span id="insightsField" style="color:#7a8fa8;font-weight:normal"></span></h3>
+    <span class="toggle-icon">▼</span>
+  </div>
+  <div class="insights-body" id="insightsBody">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <span style="font-size:12px;color:#7a8fa8">Analyze mismatches in field:</span>
+      <select id="insightsFieldSelect" onchange="runRootCause()" style="width:auto;margin:0;padding:5px 8px;font-size:12px"></select>
+    </div>
+    <div id="insightsContent"><p style="color:#4b6280;font-size:12px">Select a field to analyze its mismatch patterns.</p></div>
   </div>
 </div>
 
@@ -388,11 +504,12 @@ ETL TEST AUTOMATION TOOL
     <table style="width:100%;border-collapse:collapse;table-layout:fixed">
       <thead>
         <tr style="position:sticky;top:0;z-index:5;background:#1e2d45">
-          <th style="width:28%;padding:9px 8px;text-align:left;border-bottom:2px solid #2a3f5f">Key</th>
-          <th style="width:12%;padding:9px 8px;text-align:left;border-bottom:2px solid #2a3f5f">Field</th>
-          <th style="width:24%;padding:9px 8px;text-align:left;border-bottom:2px solid #2a3f5f">Source</th>
-          <th style="width:24%;padding:9px 8px;text-align:left;border-bottom:2px solid #2a3f5f">Target</th>
-          <th style="width:12%;padding:9px 8px;text-align:left;border-bottom:2px solid #2a3f5f">Status</th>
+          <th style="width:24%;padding:9px 8px;text-align:left;border-bottom:2px solid #2a3f5f">Key</th>
+          <th style="width:10%;padding:9px 8px;text-align:left;border-bottom:2px solid #2a3f5f">Field</th>
+          <th style="width:21%;padding:9px 8px;text-align:left;border-bottom:2px solid #2a3f5f">Source</th>
+          <th style="width:21%;padding:9px 8px;text-align:left;border-bottom:2px solid #2a3f5f">Target</th>
+          <th style="width:11%;padding:9px 8px;text-align:left;border-bottom:2px solid #2a3f5f">Status</th>
+          <th style="width:13%;padding:9px 8px;text-align:left;border-bottom:2px solid #2a3f5f">Investigate</th>
         </tr>
       </thead>
       <tbody id="results"></tbody>
@@ -597,15 +714,21 @@ function initializeColumnMappings() {
   state.columnMappings=[];
   state.srcColumns.forEach(function(src){
     let tgt=state.tgtColumns.find(function(t){ return t.name.toLowerCase()===src.name.toLowerCase(); });
-    state.columnMappings.push({srcCol:src.name,tgtCol:tgt?tgt.name:"",enabled:!!tgt});
+    state.columnMappings.push({srcCol:src.name,tgtCol:tgt?tgt.name:"",enabled:!!tgt,method:tgt?"exact":null,confidence:tgt?1:0});
   });
 }
 function renderColumnMappings() {
   $('columnMappings').innerHTML="";
   state.columnMappings.forEach(function(m,idx){
     const row=document.createElement("div"); row.className="mapping-row";
+    let badge="";
+    if(m.method){
+      const pct=Math.round((m.confidence||1)*100);
+      const cls=pct>=95?"badge-ok":(pct>=85?"badge-warn":"badge-bad");
+      badge=' <span class="mismatch-badge '+cls+'" style="font-size:10px" title="Matched via '+m.method+'">'+m.method+' '+pct+'%</span>';
+    }
     row.innerHTML='<input type="checkbox" '+(m.enabled?"checked":"")+' onchange="state.columnMappings['+idx+'].enabled=this.checked">'
-      +'<div>'+m.srcCol+'</div><div class="mapping-arrow">→</div>'
+      +'<div>'+m.srcCol+badge+'</div><div class="mapping-arrow">→</div>'
       +'<select onchange="state.columnMappings['+idx+'].tgtCol=this.value;state.columnMappings['+idx+'].enabled=!!this.value">'
       +'<option value="">-- Select --</option>'
       +state.tgtColumns.map(function(t){ return '<option value="'+t.name+'" '+(m.tgtCol===t.name?"selected":"")+'>'+t.name+'</option>'; }).join("")
@@ -615,23 +738,215 @@ function renderColumnMappings() {
 }
 function selectAllColumns(){state.columnMappings.forEach(function(m){if(m.tgtCol)m.enabled=true;});renderColumnMappings();}
 function deselectAllColumns(){state.columnMappings.forEach(function(m){m.enabled=false;});renderColumnMappings();}
-function autoMapColumns(){initializeColumnMappings();renderColumnMappings();alert("Auto map complete");}
+
+/* AUTO MAP: header normalization + alias lookup, fuzzy matching, data pattern profiling */
+function normalizeHeader(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]/g,""); }
+
+const HEADER_ALIAS_MAP={
+  "nstitle":"degree","nametitle":"degree","degreetype":"degree",
+  "lob":"lineofbusiness","linebusiness":"lineofbusiness",
+  "npinumber":"npi","nationalprovideridentifier":"npi","providernpi":"npi",
+  "taxidentificationnumber":"taxid","tin":"taxid","ein":"taxid","federaltaxid":"taxid",
+  "emailaddress":"email","emailid":"email","mailaddress":"email",
+  "stcode":"state","statecode":"state","stateabbr":"state","stateabbreviation":"state",
+  "ssn":"socialsecuritynumber","socsecnum":"socialsecuritynumber","socialsecurity":"socialsecuritynumber",
+  "dob":"dateofbirth","birthdate":"dateofbirth","birthdt":"dateofbirth",
+  "fname":"firstname","givenname":"firstname",
+  "lname":"lastname","surname":"lastname",
+  "zipcode":"zip","postalcode":"zip",
+  "phonenumber":"phone","telephone":"phone","cellphone":"phone","mobilephone":"phone",
+  "faxnumber":"fax","faxnum":"fax","faxno":"fax",
+  "addr":"address","addr1":"addressline1","addr2":"addressline2","streetaddress":"address"
+};
+
+function levenshteinDistance(a,b){
+  const m=a.length,n=b.length;
+  if(m===0) return n; if(n===0) return m;
+  const dp=new Array(n+1);
+  for(let j=0;j<=n;j++) dp[j]=j;
+  for(let i=1;i<=m;i++){
+    let prev=dp[0]; dp[0]=i;
+    for(let j=1;j<=n;j++){
+      const temp=dp[j];
+      dp[j]=a[i-1]===b[j-1]?prev:1+Math.min(prev,dp[j],dp[j-1]);
+      prev=temp;
+    }
+  }
+  return dp[n];
+}
+function levenshteinSimilarity(a,b){
+  if(a===b) return 1;
+  const maxLen=Math.max(a.length,b.length);
+  if(maxLen===0) return 1;
+  return 1-levenshteinDistance(a,b)/maxLen;
+}
+function jaroWinklerSimilarity(s1,s2){
+  if(s1===s2) return 1;
+  const len1=s1.length,len2=s2.length;
+  if(len1===0||len2===0) return 0;
+  const matchDistance=Math.max(0,Math.floor(Math.max(len1,len2)/2)-1);
+  const s1Matches=new Array(len1).fill(false);
+  const s2Matches=new Array(len2).fill(false);
+  let matches=0;
+  for(let i=0;i<len1;i++){
+    const start=Math.max(0,i-matchDistance);
+    const end=Math.min(i+matchDistance+1,len2);
+    for(let j=start;j<end;j++){
+      if(s2Matches[j]||s1[i]!==s2[j]) continue;
+      s1Matches[i]=true; s2Matches[j]=true; matches++; break;
+    }
+  }
+  if(matches===0) return 0;
+  let t=0,k=0;
+  for(let i=0;i<len1;i++){
+    if(!s1Matches[i]) continue;
+    while(!s2Matches[k]) k++;
+    if(s1[i]!==s2[k]) t++;
+    k++;
+  }
+  t/=2;
+  const jaro=(matches/len1+matches/len2+(matches-t)/matches)/3;
+  let prefix=0;
+  for(let i=0;i<Math.min(4,len1,len2);i++){ if(s1[i]===s2[i]) prefix++; else break; }
+  return jaro+prefix*0.1*(1-jaro);
+}
+
+const US_STATE_CODES=new Set(["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC"]);
+const DATA_PATTERNS=[
+  {name:"NPI",  target:"npi",   minRatio:0.8, test:function(v){ return /^\d{10}$/.test(v); }},
+  {name:"TaxID",target:"taxid", minRatio:0.8, test:function(v){ return /^\d{9}$/.test(v)||/^\d{2}-\d{7}$/.test(v); }},
+  {name:"Email",target:"email", minRatio:0.8, test:function(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }},
+  {name:"State",target:"state", minRatio:0.8, test:function(v){ return /^[A-Za-z]{2}$/.test(v)&&US_STATE_CODES.has(v.toUpperCase()); }}
+];
+function profileColumnPattern(colName, rows){
+  const values=rows.map(function(r){ return r[colName]; })
+    .filter(function(v){ return v!==null&&v!==undefined&&String(v).trim()!==""; })
+    .map(function(v){ return String(v).trim(); });
+  if(values.length<3) return null;
+  let best=null;
+  DATA_PATTERNS.forEach(function(p){
+    const matchCount=values.filter(p.test).length;
+    const ratio=matchCount/values.length;
+    if(ratio>=p.minRatio && (!best||ratio>best.ratio)) best={name:p.name,target:p.target,ratio:ratio};
+  });
+  return best;
+}
+
+const FUZZY_THRESHOLD=0.85;
+function buildAutoMappings(profileRows){
+  const tgtNorm=state.tgtColumns.map(function(t){ return {col:t, norm:normalizeHeader(t.name)}; });
+  const stats={exact:0,alias:0,fuzzy:0,data:0,none:0};
+  const results=state.srcColumns.map(function(src){
+    const srcNorm=normalizeHeader(src.name);
+    let tgtCol="",method=null,confidence=0;
+
+    let hit=tgtNorm.find(function(t){ return t.norm===srcNorm; });
+    if(hit){ tgtCol=hit.col.name; method="exact"; confidence=1; }
+
+    if(!tgtCol){
+      const canon=HEADER_ALIAS_MAP[srcNorm];
+      if(canon){
+        hit=tgtNorm.find(function(t){ return t.norm===canon; });
+        if(hit){ tgtCol=hit.col.name; method="alias"; confidence=0.95; }
+      }
+    }
+
+    if(!tgtCol){
+      let best=null,bestScore=0;
+      tgtNorm.forEach(function(t){
+        const score=Math.max(levenshteinSimilarity(srcNorm,t.norm), jaroWinklerSimilarity(srcNorm,t.norm));
+        if(score>bestScore){ bestScore=score; best=t; }
+      });
+      if(best && bestScore>FUZZY_THRESHOLD){ tgtCol=best.col.name; method="fuzzy"; confidence=bestScore; }
+    }
+
+    if(!tgtCol && profileRows && profileRows.length){
+      const pattern=profileColumnPattern(src.name, profileRows);
+      if(pattern){
+        hit=tgtNorm.find(function(t){ return t.norm.indexOf(pattern.target)!==-1; });
+        if(hit){ tgtCol=hit.col.name; method="data:"+pattern.name; confidence=pattern.ratio; }
+      }
+    }
+
+    stats[method?(method.indexOf("data")===0?"data":method):"none"]++;
+    return {srcCol:src.name, tgtCol:tgtCol, enabled:!!tgtCol, method:method, confidence:confidence};
+  });
+  return {results:results, stats:stats};
+}
+
+async function autoMapColumns(){
+  let profileRows=[];
+  try{
+    const resp=await fetch(API+"/db/preview",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({config:state.srcConfig, schema:state.srcTable.schema, table:state.srcTable.name, limit:50})});
+    const data=await resp.json();
+    profileRows=data.rows||[];
+  }catch(e){ profileRows=[]; }
+
+  const {results, stats}=buildAutoMappings(profileRows);
+  state.columnMappings=results;
+  renderColumnMappings();
+  const matched=results.filter(function(r){ return r.tgtCol; }).length;
+  showToast("Auto map: "+matched+"/"+results.length+" matched — exact "+stats.exact+", alias "+stats.alias+", fuzzy "+stats.fuzzy+", data "+stats.data, 4500);
+}
 
 /* KEYS */
 function validateAndGoToKeys(){loadKeys();show(4);}
 function loadKeys() {
-  $('keys').innerHTML="";
-  state.srcColumns.forEach(function(src){
-    $('keys').innerHTML+='<tr><td>'+src.name+'</td><td><select onchange="updateKeyMappings()" data-src="'+src.name+'">'
-      +'<option value="">-- None --</option>'
-      +state.tgtColumns.map(function(t){ return '<option value="'+t.name+'">'+t.name+'</option>'; }).join("")
-      +'</select></td></tr>';
+  state.keyRows=state.srcColumns.map(function(src){
+    return {srcCol:src.name, tgtCol:"", enabled:false};
   });
+  renderKeyRows();
+  updateKeyMappings();
   renderFilters();
 }
+function renderKeyRows() {
+  $('keys').innerHTML="";
+  state.keyRows.forEach(function(r,idx){
+    $('keys').innerHTML+='<tr><td><input type="checkbox" '+(r.enabled?"checked":"")+' onchange="state.keyRows['+idx+'].enabled=this.checked;updateKeyMappings()"></td><td>'+r.srcCol+'</td>'
+      +'<td><select onchange="state.keyRows['+idx+'].tgtCol=this.value;state.keyRows['+idx+'].enabled=!!this.value;updateKeyMappings();renderKeyRows()">'
+      +'<option value="">-- None --</option>'
+      +state.tgtColumns.map(function(t){ return '<option value="'+t.name+'" '+(r.tgtCol===t.name?"selected":"")+'>'+t.name+'</option>'; }).join("")
+      +'</select></td></tr>';
+  });
+}
 function updateKeyMappings() {
-  state.keyMappings=[];
-  document.querySelectorAll('#keys select').forEach(function(sel){ if(sel.value) state.keyMappings.push({src:sel.dataset.src,tgt:sel.value}); });
+  state.keyMappings=state.keyRows.filter(function(r){ return r.enabled&&r.tgtCol; })
+    .map(function(r){ return {src:r.srcCol, tgt:r.tgtCol}; });
+}
+const KEY_NAME_PATTERN=/(id|key|npi|taxid|ssn|mrn|acctnum|accountnumber)$/;
+function looksLikeKeyColumn(name){
+  return !!name && KEY_NAME_PATTERN.test(normalizeHeader(name));
+}
+function matchBestTargetColumn(srcName){
+  const srcNorm=normalizeHeader(srcName);
+  const tgtNorm=state.tgtColumns.map(function(t){ return {col:t, norm:normalizeHeader(t.name)}; });
+  let hit=tgtNorm.find(function(t){ return t.norm===srcNorm; });
+  if(hit) return hit.col.name;
+  const canon=HEADER_ALIAS_MAP[srcNorm];
+  if(canon){
+    hit=tgtNorm.find(function(t){ return t.norm===canon; });
+    if(hit) return hit.col.name;
+  }
+  let best=null,bestScore=0;
+  tgtNorm.forEach(function(t){
+    const score=Math.max(levenshteinSimilarity(srcNorm,t.norm), jaroWinklerSimilarity(srcNorm,t.norm));
+    if(score>bestScore){ bestScore=score; best=t; }
+  });
+  if(best && bestScore>FUZZY_THRESHOLD) return best.col.name;
+  return "";
+}
+function autoMapKeys(){
+  let matched=0;
+  state.keyRows.forEach(function(r){
+    const bestTgt=matchBestTargetColumn(r.srcCol);
+    r.tgtCol=bestTgt;
+    r.enabled=!!bestTgt && (looksLikeKeyColumn(r.srcCol)||looksLikeKeyColumn(bestTgt));
+    if(r.enabled) matched++;
+  });
+  renderKeyRows();
+  updateKeyMappings();
+  showToast("Auto-mapped "+matched+" key column"+(matched===1?"":"s")+" — review and uncheck any you don't want", 3500);
 }
 
 /* FILTERS */
@@ -682,7 +997,7 @@ function showActiveFilters() {
 }
 
 /* RULES */
-function validateKeysAndNext(){ if(!state.keyMappings.length){alert("Select at least one key");return;} loadComparisonRules(); show(5); }
+function validateKeysAndNext(){ if(!state.keyMappings.length){alert("Select at least one key");return;} loadComparisonRules(); loadGates(); show(5); }
 function loadComparisonRules() {
   $('mapping').innerHTML="";
   const prevRules={};
@@ -696,11 +1011,14 @@ function loadComparisonRules() {
       {g:"SMART RULES (Recommended)", opts:[
         {v:"address_normalized_strict", l:"Address (Street) — strip suite/unit, normalize abbrev"},
         {v:"address2_suite_ignored",    l:"Address Line 2 — null src vs STE/UNIT target = Match"},
-        {v:"first_name_with_initial",   l:"First Name with Initial (handles embedded initials)"},
+        {v:"first_name_with_initial",   l:"First Name with Initial (handles embedded initial, middle name, or compound first name)"},
+        {v:"last_name_with_suffix",     l:"Last Name with Suffix (handles embedded suffix like Jr, Sr, II, III)"},
+        {v:"date_flexible",             l:"Date Flexible (matches calendar date regardless of format/zero-padding)"},
         {v:"numeric_flexible",          l:"Numeric Flexible (phone, ID, numbers - strips all punctuation)"},
       ]},
       {g:"AUTOMATIC", opts:[
         {v:"boolean_match", l:"Boolean Match (automatic - detects Y/N, true/false, 1/0)"},
+        {v:"gender_match",  l:"Gender Match (automatic - MALE/M, FEMALE/F, UNKNOWN/U)"},
       ]},
       {g:"FALLBACK (Generic)", opts:[
         {v:"exact",              l:"Exact Match (case-sensitive)"},
@@ -720,6 +1038,135 @@ function loadComparisonRules() {
 function setAllRules(rule){
   state.fieldMappings.forEach(function(m){m.rule=rule;});
   document.querySelectorAll('#mapping select').forEach(function(sel){sel.value=rule;});
+}
+function inferComparisonRule(srcCol, tgtCol, tgtType){
+  const srcN=normalizeHeader(srcCol), tgtN=normalizeHeader(tgtCol);
+  const type=String(tgtType||"").toLowerCase();
+
+  if(type==="bit"||type==="boolean") return "boolean_match";
+
+  const genderRe=/(^gender$|^sex$|gendercode|sexcode)/;
+  if(genderRe.test(srcN)||genderRe.test(tgtN)) return "gender_match";
+
+  const addr2Re=/(address2|addr2|addressline2|suite|apt|unit)/;
+  if(addr2Re.test(srcN)||addr2Re.test(tgtN)) return "address2_suite_ignored";
+
+  const addrRe=/(address|addr|street)/;
+  if(addrRe.test(srcN)||addrRe.test(tgtN)) return "address_normalized_strict";
+
+  const fnameRe=/(firstname|fname|givenname)/;
+  if(fnameRe.test(srcN)||fnameRe.test(tgtN)) return "first_name_with_initial";
+
+  const lnameRe=/(lastname|lname|surname)/;
+  if(lnameRe.test(srcN)||lnameRe.test(tgtN)) return "last_name_with_suffix";
+
+  const dateRe=/(^date|date$|dob$)/;
+  if(dateRe.test(srcN)||dateRe.test(tgtN)) return "date_flexible";
+  if(/^(date|datetime|smalldatetime|datetime2|timestamp)$/.test(type)) return "date_flexible";
+
+  const numericIdRe=/(phone|telephone|fax|mobile|cellphone|npi|taxid|ssn|ein|tin|zipcode|zip)/;
+  if(numericIdRe.test(srcN)||numericIdRe.test(tgtN)) return "numeric_flexible";
+  if(/^(int|bigint|smallint|tinyint|decimal|numeric|float|real|money)$/.test(type)) return "numeric_flexible";
+
+  return "exact";
+}
+const BOOLEAN_LITERALS=new Set(["y","n","yes","no","true","false","1","0"]);
+async function fetchFieldSampleData(){
+  const pairsByField={};
+  state.fieldMappings.forEach(function(m){ pairsByField[m.src+"→"+m.tgt]=[]; });
+  const empty={pairsByField:pairsByField, srcRows:[], tgtRows:[]};
+  if(!state.srcTable||!state.tgtTable) return empty;
+
+  let srcRows=[], tgtRows=[];
+  try{
+    const [sResp,tResp]=await Promise.all([
+      fetch(API+"/db/preview",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({config:state.srcConfig,schema:state.srcTable.schema,table:state.srcTable.name,limit:200})}),
+      fetch(API+"/db/preview",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({config:state.tgtConfig,schema:state.tgtTable.schema,table:state.tgtTable.name,limit:1000})})
+    ]);
+    const [sData,tData]=await Promise.all([sResp.json(),tResp.json()]);
+    srcRows=sData.rows||[]; tgtRows=tData.rows||[];
+  }catch(e){ return empty; }
+
+  if(state.keyMappings.length){
+    function buildRecordKey(row, side){
+      return state.keyMappings.map(function(k){
+        const v=row[k[side]];
+        return v===null||v===undefined?"":String(v).trim().toLowerCase();
+      }).join("||");
+    }
+    const tgtByKey={};
+    tgtRows.forEach(function(r){ tgtByKey[buildRecordKey(r,"tgt")]=r; });
+
+    srcRows.forEach(function(s){
+      const t=tgtByKey[buildRecordKey(s,"src")];
+      if(!t) return;
+      state.fieldMappings.forEach(function(m){
+        const sv=s[m.src], tv=t[m.tgt];
+        if(sv===null||sv===undefined||String(sv).trim()==="") return;
+        if(tv===null||tv===undefined||String(tv).trim()==="") return;
+        pairsByField[m.src+"→"+m.tgt].push([sv,tv]);
+      });
+    });
+  }
+  return {pairsByField:pairsByField, srcRows:srcRows, tgtRows:tgtRows};
+}
+function inferRuleFromSamplePairs(pairs){
+  if(!pairs||pairs.length<3) return null;
+  let boolLike=0, strict=0, loose=0;
+  pairs.forEach(function(p){
+    const sv=String(p[0]).trim(), tv=String(p[1]).trim();
+    if(BOOLEAN_LITERALS.has(sv.toLowerCase())&&BOOLEAN_LITERALS.has(tv.toLowerCase())) boolLike++;
+    if(sv===tv) strict++;
+    else if(sv.toLowerCase()===tv.toLowerCase()) loose++;
+  });
+  const total=pairs.length;
+  if(boolLike/total>=0.8) return "boolean_match";
+  if(loose>0 && (strict+loose)/total>=0.6) return "string_normalized";
+  return null;
+}
+function detectCasingStyle(values){
+  const strs=values
+    .filter(function(v){ return v!==null&&v!==undefined&&String(v).trim()!==""; })
+    .map(function(v){ return String(v).trim(); })
+    .filter(function(v){ return /[a-zA-Z]/.test(v); });
+  if(strs.length<3) return null;
+  const isUpper=function(v){ return v===v.toUpperCase()&&v!==v.toLowerCase(); };
+  const isLower=function(v){ return v===v.toLowerCase()&&v!==v.toUpperCase(); };
+  const upperCount=strs.filter(isUpper).length;
+  const lowerCount=strs.filter(isLower).length;
+  if(upperCount/strs.length>=0.8) return "upper";
+  if(lowerCount/strs.length>=0.8) return "lower";
+  return "mixed";
+}
+async function autoMapRules(){
+  const btn=$('autoMapRulesBtn');
+  if(btn){ btn.disabled=true; btn.innerText="🪄 Sampling records…"; }
+  try{
+    const selects=document.querySelectorAll('#mapping select');
+    const {pairsByField, srcRows, tgtRows}=await fetchFieldSampleData();
+    let dataDriven=0;
+    state.fieldMappings.forEach(function(m,idx){
+      const tgtMeta=state.tgtColumns.find(function(t){ return t.name===m.tgt; });
+      let rule=inferComparisonRule(m.src, m.tgt, tgtMeta?tgtMeta.type:"");
+      if(rule==="exact"){
+        let suggested=inferRuleFromSamplePairs(pairsByField[m.src+"→"+m.tgt]);
+        if(!suggested){
+          const srcVals=srcRows.map(function(r){ return r[m.src]; });
+          const tgtVals=tgtRows.map(function(r){ return r[m.tgt]; });
+          const srcStyle=detectCasingStyle(srcVals), tgtStyle=detectCasingStyle(tgtVals);
+          if(srcStyle && tgtStyle && srcStyle!==tgtStyle) suggested="string_normalized";
+        }
+        if(suggested){ rule=suggested; dataDriven++; }
+      }
+      m.rule=rule;
+      if(selects[idx]) selects[idx].value=rule;
+    });
+    showToast("Auto-mapped "+state.fieldMappings.length+" rules"+(dataDriven?" ("+dataDriven+" from sampled record data)":""), 3500);
+  } finally {
+    if(btn){ btn.disabled=false; btn.innerText="🪄 Auto Map Rules"; }
+  }
 }
 
 /* PREVIEW TABLE */
@@ -822,6 +1269,8 @@ async function runTest() {
   $('cancelBtn').style.display="inline-block";
   $('shareCurrentBtn').style.display="none";
   $('exportHtmlBtn').style.display="none";
+  $('alertBanner').style.display="none"; $('gateBadgeSlot').innerHTML="";
+  $('insightsBox').style.display="none";
   $('summary').style.display="block"; $('metricsRow').style.display="none";
   $('summaryContent').innerHTML="<p>Starting comparison...</p>";
   $('errorMessage').style.display="none"; $('virtualTableContainer').style.display="none";
@@ -860,10 +1309,12 @@ async function pollJob(jobId) {
       if(data.status==="COMPLETED"){
         clearInterval(pollInterval); resetRunButton();
         showSummary(data.stats); showActiveFilters();
+        renderGateAndAlerts(data.stats);
         $('shareCurrentBtn').style.display="inline-block";
         $('exportHtmlBtn').style.display="inline-block";
         currentPage=1; currentStatusFilter=null; currentFieldFilter=null;
         await loadFieldSummary(jobId); await loadResultsPage();
+        populateInsightsFields();
       }
       if(data.status==="FAILED"||data.status==="CANCELLED"){
         clearInterval(pollInterval); resetRunButton();
@@ -921,20 +1372,97 @@ function updatePaginationControls(){
   $('firstBtn').disabled=currentPage===1; $('prevBtn').disabled=currentPage===1;
   $('nextBtn').disabled=currentPage===totalPages; $('lastBtn').disabled=currentPage===totalPages;
 }
+let lastResultsRows=[];
 function renderResults(rows){
+  lastResultsRows=rows||[];
   const tbody=$('results'); tbody.innerHTML="";
-  if(!rows||!rows.length){ tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:#888;padding:20px">No results found.</td></tr>'; return; }
+  if(!rows||!rows.length){ tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:#888;padding:20px">No results found.</td></tr>'; return; }
   const frag=document.createDocumentFragment();
-  rows.forEach(function(r){
+  rows.forEach(function(r,i){
     const tr=document.createElement("tr"); tr.className=r.status==="MATCHED"?"good":"bad";
     const tdStyle='padding:7px 8px;vertical-align:top;word-break:break-word;font-size:12px;border-bottom:1px solid #111827';
     const statusColor=r.status==='MATCHED'?'#4ade80':r.status==='MISMATCH'?'#f87171':r.status==='NULL_MISMATCH'?'#fb923c':(r.status==='SOURCE_ONLY'||r.status==='TARGET_ONLY')?'#a78bfa':'#e8f0fe';
-    tr.innerHTML='<td style="'+tdStyle+'">'+esc(r.key)+'</td><td style="'+tdStyle+'">'+esc(r.field)+'</td><td style="'+tdStyle+'">'+esc(r.source)+'</td><td style="'+tdStyle+'">'+esc(r.target)+'</td><td style="'+tdStyle+';color:'+statusColor+';font-weight:bold">'+esc(r.status)+'</td>';
+    tr.innerHTML='<td style="'+tdStyle+'">'+esc(r.key)+'</td><td style="'+tdStyle+'">'+esc(r.field)+'</td><td style="'+tdStyle+'">'+esc(r.source)+'</td><td style="'+tdStyle+'">'+esc(r.target)+'</td><td style="'+tdStyle+';color:'+statusColor+';font-weight:bold">'+esc(r.status)+'</td>'
+      +'<td style="'+tdStyle+'"><button class="btn-secondary" style="padding:3px 8px;font-size:11px;margin:0" onclick="copyRowQuery('+i+')" title="Copy SELECT queries for this key (source + target)">📋 Query</button></td>';
     frag.appendChild(tr);
   });
   tbody.appendChild(frag);
 }
 function esc(v){if(v==null)return"";const d=document.createElement("div");d.textContent=String(v);return d.innerHTML;}
+
+/* INVESTIGATE: copy a runnable SELECT for a result row's key, for source + target */
+function parseKeyTuple(keyStr){
+  if(!keyStr) return [];
+  let s=String(keyStr).trim();
+  if(s.startsWith("(")) s=s.slice(1);
+  if(s.endsWith(")")) s=s.slice(0,-1);
+  const tokens=[];
+  let i=0;
+  while(i<s.length){
+    while(i<s.length && (s[i]===" "||s[i]===",")) i++;
+    if(i>=s.length) break;
+    if(s[i]==="'"){
+      let j=i+1, buf="";
+      while(j<s.length){
+        if(s[j]==="\\" && j+1<s.length){ buf+=s[j+1]; j+=2; continue; }
+        if(s[j]==="'"){ j++; break; }
+        buf+=s[j]; j++;
+      }
+      tokens.push({raw:buf, quoted:true});
+      i=j;
+    } else {
+      let j=i;
+      while(j<s.length && s[j]!==",") j++;
+      tokens.push({raw:s.slice(i,j).trim(), quoted:false});
+      i=j;
+    }
+  }
+  return tokens.map(function(t){
+    if(t.quoted) return t.raw;
+    if(t.raw==="None") return null;
+    const decMatch=t.raw.match(/^Decimal\('([^']*)'\)$/);
+    if(decMatch) return decMatch[1];
+    return t.raw;
+  });
+}
+const SQL_NUMERIC_TYPES=new Set(["int","bigint","smallint","tinyint","decimal","numeric","float","real","money","smallmoney","bit"]);
+function sqlLiteral(value, colType){
+  if(value===null||value===undefined) return "NULL";
+  const type=String(colType||"").toLowerCase();
+  const isNumeric=SQL_NUMERIC_TYPES.has(type) && /^-?\d+(\.\d+)?$/.test(String(value).trim());
+  if(isNumeric) return String(value).trim();
+  return "'"+String(value).replace(/'/g,"''")+"'";
+}
+function buildKeyWhereLines(keyValues, side){
+  const columns=side==="src"?state.srcColumns:state.tgtColumns;
+  return state.keyMappings.map(function(km,idx){
+    const col=km[side];
+    const val=keyValues[idx];
+    const colMeta=columns.find(function(c){ return c.name===col; });
+    const lit=sqlLiteral(val, colMeta?colMeta.type:"");
+    const op=(val===null||val===undefined)?"IS":"=";
+    return '['+col+'] '+op+' '+lit;
+  });
+}
+function buildRowQueries(keyStr){
+  if(!state.keyMappings.length||!state.srcTable||!state.tgtTable) return null;
+  const keyValues=parseKeyTuple(keyStr);
+  if(!keyValues.length||keyValues.length!==state.keyMappings.length) return null;
+  const srcTbl='['+state.srcConfig.host+'].['+state.srcConfig.database+'].['+state.srcTable.schema+'].['+state.srcTable.name+']';
+  const tgtTbl='['+state.tgtConfig.host+'].['+state.tgtConfig.database+'].['+state.tgtTable.schema+'].['+state.tgtTable.name+']';
+  const srcWhere=buildKeyWhereLines(keyValues,"src").join('\nand ');
+  const tgtWhere=buildKeyWhereLines(keyValues,"tgt").join('\nand ');
+  return 'select * from '+srcTbl+'\nwhere '+srcWhere+'\n\n\nselect * from '+tgtTbl+'\nwhere '+tgtWhere;
+}
+function copyRowQuery(idx){
+  const row=lastResultsRows[idx];
+  if(!row) return;
+  const q=buildRowQueries(row.key);
+  if(!q){ showToast("Can't build query — key mapping unavailable for this row"); return; }
+  navigator.clipboard.writeText(q)
+    .then(function(){ showToast("✓ Query copied — paste into SSMS to investigate"); })
+    .catch(function(){ prompt("Copy this query:", q); });
+}
 
 /* SUMMARY */
 function showSummary(stats){
@@ -1132,6 +1660,180 @@ function buildReportHTML(meta, fieldSummary, allResults) {
   const generatedAt = new Date().toLocaleString();
   const fsSection = fieldSummary.length ? '<div class="section"><div class="collapsible-header" onclick="toggleSection(\'fs\')"><h3>📊 Mismatch Field Summary <span style="color:#7a8fa8;font-weight:normal;font-size:12px">— '+fieldSummary.length+' fields</span></h3><span class="chevron">▼</span></div><div class="collapsible-body" id="fs-body"><div class="filter-bar"><input id="fs-search" placeholder="🔍 Filter fields…" oninput="filterFs()"><select id="fs-filter" onchange="filterFs()"><option value="all">All Fields</option><option value="mismatch">Has Mismatches</option><option value="perfect">Perfect (100%)</option><option value="failing">Failing (&lt;70%)</option></select><span class="count-badge" id="fs-count">'+fieldSummary.length+' fields</span></div><div class="table-wrap"><table><thead><tr><th onclick="sortFsCol(\'field\')" style="cursor:pointer">Field ↕</th><th onclick="sortFsCol(\'mismatched\')" style="cursor:pointer;color:#00d4ff">Mismatches ↓</th><th onclick="sortFsCol(\'null_mismatch\')" style="cursor:pointer">Null Mismatches ↕</th><th onclick="sortFsCol(\'matched\')" style="cursor:pointer">Matched ↕</th><th onclick="sortFsCol(\'total\')" style="cursor:pointer">Total ↕</th><th onclick="sortFsCol(\'accuracy\')" style="cursor:pointer">Accuracy ↕</th></tr></thead><tbody id="fs-tbody">'+fsRows+'</tbody></table></div><div style="padding:8px 0;font-size:11px;color:#4b6280" id="fs-footer">Showing '+fieldSummary.length+' fields · '+totalMismatches.toLocaleString()+' total mismatches</div></div></div>' : "";
   return '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>ETL Report — '+escR(meta.testCase||"N/A")+'</title>\n<style>\n*{box-sizing:border-box;margin:0;padding:0}\nbody{background:#0a0e17;color:#e8f0fe;font-family:\'Segoe UI\',Arial,sans-serif;min-height:100vh;padding-bottom:60px}\n.report-header{background:#0d1220;border-bottom:2px solid #00d4ff;padding:20px 32px;display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap}\n.report-header h1{font-size:22px;font-weight:700;letter-spacing:.5px;margin-bottom:4px}\n.report-header .sub{font-size:12px;color:#7a8fa8}\n.badge{background:#00d4ff;color:#0a0e17;padding:3px 10px;border-radius:3px;font-size:11px;font-weight:bold}\n.COMPLETED{background:#15382166;color:#4ade80;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}\n.FAILED{background:#4c1d1d66;color:#f87171;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}\n.CANCELLED{background:#2d1f0066;color:#fb923c;padding:3px 12px;border-radius:10px;font-size:12px;font-weight:bold;display:inline-block}\n.body{max-width:1400px;margin:0 auto;padding:28px 32px}\n.section{margin-bottom:32px}\n.section-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#4b6280;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #1e2d45}\n.metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}\n.metric-card{background:#111827;border:1px solid #1e2d45;border-radius:8px;padding:16px}\n.metric-card .val{font-size:30px;font-weight:800;line-height:1}\n.metric-card .lbl{font-size:11px;color:#7a8fa8;margin-top:6px}\n.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}\n.stat-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#111827;border-radius:4px;font-size:12px}\n.stat-row .s-label{color:#7a8fa8}.stat-row .s-val{font-weight:700}\ntable{width:100%;border-collapse:collapse;font-size:12px}\nth{background:#111827;color:#7a8fa8;padding:9px 12px;text-align:left;border-bottom:1px solid #1e2d45;white-space:nowrap;position:sticky;top:0;z-index:2}\ntd{padding:8px 12px;border-bottom:1px solid #111827}\n.table-wrap{border:1px solid #1e2d45;border-radius:6px;overflow:hidden}\n.results-wrap{max-height:520px;overflow-y:auto;border:1px solid #1e2d45;border-radius:6px}\n.filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}\n.filter-bar input,.filter-bar select{background:#111827;border:1px solid #2a3f5f;color:#fff;padding:6px 10px;border-radius:4px;font-size:12px}\n.filter-bar input{width:220px}\n.count-badge{background:#1e2d45;padding:4px 12px;border-radius:4px;font-size:11px;color:#7a8fa8}\n.export-note{background:#0d2040;border:1px solid #1e2d45;border-radius:6px;padding:12px 16px;font-size:11px;color:#7a8fa8;margin-bottom:20px;display:flex;align-items:center;gap:8px}\n.footer{text-align:center;padding:32px;color:#3a4f6a;font-size:11px;border-top:1px solid #1a2638;margin-top:40px}\n.collapsible-header{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:12px 16px;background:#111827;border-radius:6px 6px 0 0;user-select:none}\n.collapsible-header:hover{background:#141e30}\n.collapsible-header h3{font-size:13px;margin:0}\n.collapsible-header .chevron{color:#00d4ff;font-size:15px;transition:transform .2s}\n.collapsible-header.collapsed .chevron{transform:rotate(-90deg)}\n.collapsible-body{padding:16px;background:#0d1a2e;border:1px solid #1e2d45;border-top:none;border-radius:0 0 6px 6px}\n.collapsible-body.hidden{display:none}\n.csv-btn{background:#1e2d45;color:#e8f0fe;border:none;padding:6px 14px;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold}\n.csv-btn:hover{background:#2a3f5f}\n@media(max-width:700px){.metrics-grid{grid-template-columns:1fr 1fr}.stats-grid{grid-template-columns:1fr}}\n</style></head><body>\n<div class="report-header">\n  <div><h1>📋 ETL Comparison Report</h1><div class="sub">'+escR(meta.testCase||"N/A")+' &nbsp;·&nbsp; '+new Date(meta.date).toLocaleString()+' &nbsp;·&nbsp; Job: <code style="font-size:11px">'+escR(meta.jobId)+'</code></div></div>\n  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="'+meta.status+'">'+escR(meta.status)+'</span><span class="badge">v9.2-BR</span><button class="csv-btn" onclick="downloadCSV()">⬇ Export CSV</button></div>\n</div>\n<div class="body">\n  <div class="export-note">📄 <span>Self-contained offline report &nbsp;·&nbsp; Generated '+generatedAt+' &nbsp;·&nbsp; '+allResults.length.toLocaleString()+' total rows embedded</span></div>\n  <div class="metrics-grid">\n    <div class="metric-card"><div class="val" style="color:'+faColor+'">'+fa+'%</div><div class="lbl">Field Accuracy</div></div>\n    <div class="metric-card"><div class="val" style="color:'+kmrColor+'">'+kmr+'%</div><div class="lbl">Key Match Rate</div></div>\n    <div class="metric-card"><div class="val" style="color:#60a5fa">'+(meta.totalRecords||0).toLocaleString()+'</div><div class="lbl">Total Comparisons</div></div>\n    <div class="metric-card"><div class="val" style="color:#f87171">'+(meta.mismatched||0).toLocaleString()+'</div><div class="lbl">Mismatched Fields</div></div>\n  </div>\n  <div class="section"><div class="section-title">Execution Statistics</div><div class="stats-grid">\n    <div class="stat-row"><span class="s-label">Matched Fields</span><span class="s-val" style="color:#4ade80">'+(meta.matched||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Null Mismatches</span><span class="s-val" style="color:#fb923c">'+(meta.nullMismatches||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Source-Only Keys</span><span class="s-val" style="color:#fb923c">'+(meta.keysSrcOnly||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Target-Only Keys</span><span class="s-val" style="color:#a78bfa">'+(meta.keysTgtOnly||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Keys in Both</span><span class="s-val" style="color:#60a5fa">'+(meta.keysInBoth||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Source Duplicates</span><span class="s-val">'+(meta.sourceDuplicates||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Target Duplicates</span><span class="s-val">'+(meta.targetDuplicates||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Source Row Count</span><span class="s-val">'+(meta.srcRowCount||0).toLocaleString()+'</span></div>\n    <div class="stat-row"><span class="s-label">Target Row Count</span><span class="s-val">'+(meta.tgtRowCount||0).toLocaleString()+'</span></div>\n  </div></div>\n  '+fsSection+'\n  <div class="section">\n    <div class="collapsible-header" onclick="toggleSection(\'results\')"><h3>🔍 Comparison Results <span style="color:#7a8fa8;font-weight:normal;font-size:12px">— '+allResults.length.toLocaleString()+' rows</span></h3><span class="chevron">▼</span></div>\n    <div class="collapsible-body" id="results-body">\n      <div class="filter-bar"><input id="r-search" placeholder="🔍 Search key or field…" oninput="filterResults()"><select id="r-status" onchange="filterResults()"><option value="">All Status</option><option value="MATCHED">Matched</option><option value="MISMATCH">Mismatch</option><option value="NULL_MISMATCH">Null Mismatch</option><option value="SOURCE_ONLY">Source Only</option><option value="TARGET_ONLY">Target Only</option><option value="SOURCE_DUPLICATE">Source Duplicate</option><option value="TARGET_DUPLICATE">Target Duplicate</option></select><span class="count-badge" id="r-count">'+allResults.length.toLocaleString()+' rows</span></div>\n      <div class="results-wrap"><table><thead><tr><th style="width:25%">Key</th><th style="width:12%">Field</th><th style="width:24%">Source</th><th style="width:24%">Target</th><th style="width:15%">Status</th></tr></thead><tbody id="r-tbody">'+resultRows+'</tbody></table></div>\n      <div style="padding:8px 0;font-size:11px;color:#4b6280" id="r-footer">Showing all '+allResults.length.toLocaleString()+' rows</div>\n    </div>\n  </div>\n</div>\n<div class="footer">ETL Automation Tool v9.2-BR &nbsp;·&nbsp; Report generated '+generatedAt+'<br>Self-contained offline snapshot. Data reflects the state at time of export.</div>\n<' + 'script>\nconst ALL_RESULTS='+JSON.stringify(allResults)+';\nconst FIELD_SUMMARY='+JSON.stringify(fieldSummary)+';\nfunction toggleSection(id){const b=document.getElementById(id+\'-body\');b.previousElementSibling.classList.toggle(\'collapsed\');b.classList.toggle(\'hidden\');}\nlet fsSortCol=\'mismatched\',fsSortAsc=false;\nfunction filterFs(){const q=(document.getElementById(\'fs-search\')?.value||\'\').toLowerCase();const fv=document.getElementById(\'fs-filter\')?.value||\'all\';let data=FIELD_SUMMARY.filter(f=>{if(q&&!f.field.toLowerCase().includes(q))return false;if(fv===\'mismatch\'&&f.mismatched===0&&f.null_mismatch===0)return false;if(fv===\'perfect\'&&f.accuracy<100)return false;if(fv===\'failing\'&&f.accuracy>=70)return false;return true;});data.sort((a,b)=>{let av=a[fsSortCol],bv=b[fsSortCol];if(typeof av===\'string\'){av=av.toLowerCase();bv=bv.toLowerCase();}return fsSortAsc?(av>bv?1:-1):(av<bv?1:-1);});const totalMm=data.reduce((s,f)=>s+f.mismatched+f.null_mismatch,0);document.getElementById(\'fs-tbody\').innerHTML=data.map(f=>{const bc=f.accuracy===100?\'#4ade8022;color:#4ade80\':f.accuracy>=70?\'#f59e0b22;color:#f59e0b\':\'#f8717122;color:#f87171\';const pct=totalMm>0?((f.mismatched+f.null_mismatch)/totalMm*100).toFixed(1):\'0.0\';const bar=\'<div style="display:inline-block;background:#1e2d45;border-radius:3px;height:6px;width:60px;overflow:hidden;vertical-align:middle;margin-right:6px"><div style="height:100%;width:\'+f.accuracy+\'%;background:\'+(f.accuracy===100?\'#4ade80\':f.accuracy>=70?\'#f59e0b\':\'#ef4444\')+\'"></div></div>\';return \'<tr><td style="color:#e8f0fe">\'+f.field+\'</td><td style="color:\'+(f.mismatched>0?\'#f87171\':\'#4b6280\')+\'">\'+f.mismatched.toLocaleString()+(f.mismatched>0?\'<span style="font-size:10px;color:#4b6280;margin-left:4px">\'+pct+\'%</span>\':\'\')+\'</td><td style="color:\'+(f.null_mismatch>0?\'#fb923c\':\'#4b6280\')+\'">\'+f.null_mismatch.toLocaleString()+\'</td><td style="color:#4ade80">\'+f.matched.toLocaleString()+\'</td><td style="color:#7a8fa8">\'+f.total.toLocaleString()+\'</td><td>\'+bar+\'<span style="background:\'+bc+\';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">\'+f.accuracy+\'%</span></td></tr>\';}).join(\'\');document.getElementById(\'fs-count\').innerText=data.length+\' fields\';document.getElementById(\'fs-footer\').innerText=\'Showing \'+data.length+\' of \'+FIELD_SUMMARY.length+\' fields \\xb7 \'+totalMm.toLocaleString()+\' total mismatches\';}\nfunction sortFsCol(col){fsSortAsc=fsSortCol===col?!fsSortAsc:col===\'field\';fsSortCol=col;filterFs();}\nconst SC={MATCHED:\'#4ade80\',MISMATCH:\'#f87171\',NULL_MISMATCH:\'#fb923c\',SOURCE_ONLY:\'#a78bfa\',TARGET_ONLY:\'#c084fc\',SOURCE_DUPLICATE:\'#facc15\',TARGET_DUPLICATE:\'#fbbf24\'};\nfunction filterResults(){const q=(document.getElementById(\'r-search\').value||\'\').toLowerCase();const st=document.getElementById(\'r-status\').value;const data=ALL_RESULTS.filter(r=>(!st||r.status===st)&&(!q||r.key?.toLowerCase().includes(q)||r.field?.toLowerCase().includes(q)));const rb=r=>r.status===\'MATCHED\'?\'#0d2318\':r.status===\'MISMATCH\'?\'#2a0f0f\':r.status===\'NULL_MISMATCH\'?\'#2a1a00\':\'#1a1a2e\';const pill=r=>{const c=SC[r.status]||\'#e8f0fe\';return \'background:\'+c+\'22;color:\'+c+\';padding:2px 9px;border-radius:10px;font-size:11px;font-weight:bold;display:inline-block\';};function e(v){if(v==null)return\'\';const d=document.createElement(\'div\');d.textContent=String(v);return d.innerHTML;}document.getElementById(\'r-tbody\').innerHTML=data.map(r=>\'<tr style="background:\'+rb(r)+\'"><td style="font-size:11px;word-break:break-all">\'+e(r.key)+\'</td><td>\'+e(r.field)+\'</td><td style="word-break:break-all">\'+e(r.source)+\'</td><td style="word-break:break-all">\'+e(r.target)+\'</td><td><span style="\'+pill(r)+\'">\'+e(r.status)+\'</span></td></tr>\').join(\'\');document.getElementById(\'r-count\').innerText=data.length.toLocaleString()+\' rows\';document.getElementById(\'r-footer\').innerText=\'Showing \'+data.length.toLocaleString()+\' of \'+ALL_RESULTS.length.toLocaleString()+\' rows\';}\nfunction downloadCSV(){const h=\'key,field,source,target,status\\n\';const csvEsc=v=>\'"\'+String(v||\'\').replace(/"/g,\'\'\'\')+\'"\';const r=ALL_RESULTS.map(r=>[r.key,r.field,r.source,r.target,r.status].map(csvEsc).join(\',\')).join(\'\\n\');const b=new Blob([h+r],{type:\'text/csv\'});const u=URL.createObjectURL(b);const a=document.createElement(\'a\');a.href=u;a.download=\'etl_results_export.csv\';a.click();URL.revokeObjectURL(u);}\n<' + '/script></body></html>';
+}
+
+/* ============ v9.3 DATA PROFILING ============ */
+async function profileTables(){
+  if(!state.srcTable||!state.tgtTable){alert("Select both a source and target table first.");return;}
+  const btn=$('profileBtn'); const err=$('profileError');
+  err.style.display="none";
+  btn.disabled=true; btn.innerText="🔬 Profiling…";
+  $('profilePanel').style.display="grid";
+  $('profilePanel').innerHTML=
+    '<div class="profile-col"><h4 style="color:#60a5fa">🔵 Source</h4><p style="color:#7a8fa8">Loading…</p></div>'
+   +'<div class="profile-col"><h4 style="color:#4ade80">🟢 Target</h4><p style="color:#7a8fa8">Loading…</p></div>';
+  try {
+    const [sr,tr]=await Promise.all([
+      fetch(API+"/db/profile",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({config:state.srcConfig,schema:state.srcTable.schema,table:state.srcTable.name})}),
+      fetch(API+"/db/profile",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({config:state.tgtConfig,schema:state.tgtTable.schema,table:state.tgtTable.name})})
+    ]);
+    const [sd,td]=await Promise.all([sr.json(),tr.json()]);
+    if(sd.detail) throw new Error(sd.detail);
+    if(td.detail) throw new Error(td.detail);
+    $('profilePanel').innerHTML=renderProfile(sd,"🔵 Source","#60a5fa")+renderProfile(td,"🟢 Target","#4ade80");
+  } catch(e){
+    $('profilePanel').style.display="none";
+    err.style.display="block"; err.innerText="Profiling failed: "+e.message;
+  } finally { btn.disabled=false; btn.innerText="🔬 Profile Selected Tables"; }
+}
+function renderProfile(data,title,color){
+  const rows=(data.columns||[]).map(function(c){
+    const nullPct=c.nullPct==null?"–":c.nullPct+"%";
+    const nullBar=c.nullPct==null?"":'<span class="profile-null-bar"><span class="profile-null-fill" style="width:'+Math.min(100,c.nullPct)+'%"></span></span>';
+    const top=(c.topValues||[]).slice(0,3).map(function(t){return esc(String(t.value).slice(0,24))+' <span class="prof-top">×'+t.count+'</span>';}).join('<br>')||'<span class="prof-top">—</span>';
+    const rng=(c.min!=null||c.max!=null)?('<span class="prof-top">'+esc(String(c.min==null?"":c.min).slice(0,18))+' … '+esc(String(c.max==null?"":c.max).slice(0,18))+'</span>'):'<span class="prof-top">—</span>';
+    return '<tr><td><strong>'+esc(c.name)+'</strong><br><span class="prof-top">'+esc(c.type||"")+'</span></td>'
+      +'<td>'+nullBar+nullPct+'<br><span class="prof-top">'+(c.nulls==null?"":c.nulls.toLocaleString()+' null')+'</span></td>'
+      +'<td>'+(c.distinct==null?"–":c.distinct.toLocaleString())+'<br>'+rng+'</td>'
+      +'<td>'+top+'</td></tr>';
+  }).join("");
+  return '<div class="profile-col"><h4 style="color:'+color+'">'+title+' · '+esc(data.schema+'.'+data.table)
+    +' <span class="prof-top">('+(data.totalRows||0).toLocaleString()+' rows)</span></h4>'
+    +'<div class="prof-scroll"><table class="profile-table"><thead><tr><th>Column</th><th>Null %</th><th>Distinct / Range</th><th>Top Values</th></tr></thead>'
+    +'<tbody>'+rows+'</tbody></table></div></div>';
+}
+
+/* ============ v9.3 QUALITY GATES ============ */
+function currentTestCase(){ return ($('testCaseNo').value||"").trim(); }
+function goToRun(){ show(6); }
+function onGateMetricChange(){
+  const m=$('gateMetric').value;
+  const suggested={field_accuracy:"90",key_match_rate:"95",null_rate:"5",mismatch_count:"0",row_count_diff_pct:"10"};
+  if(!$('gateThreshold').value) $('gateThreshold').value=suggested[m]||"";
+}
+async function loadGates(){
+  const tc=currentTestCase();
+  $('gateTestCaseLabel').innerText=tc?('"'+tc+'"'):'(set Test Case No in step 6)';
+  const list=$('gateList');
+  try {
+    const url=API+"/db/gates"+(tc?("?testCase="+encodeURIComponent(tc)):"");
+    const res=await fetch(url);
+    const gates=await res.json();
+    renderGateList(Array.isArray(gates)?gates:[]);
+  } catch(e){ list.innerHTML='<p style="color:#f87171;font-size:12px">Could not load gates: '+e.message+'</p>'; }
+}
+const GATE_METRIC_LABEL={field_accuracy:"Field Accuracy",key_match_rate:"Key Match Rate",null_rate:"Null Mismatch Rate",mismatch_count:"Mismatch Count",row_count_diff_pct:"Row Count Diff %"};
+const GATE_OP_TEXT={gte:"≥",lte:"≤",gt:">",lt:"<",eq:"="};
+function renderGateList(gates){
+  const list=$('gateList');
+  if(!gates.length){ list.innerHTML='<p style="color:#4b6280;font-size:12px">No gates defined yet. Add one above — e.g. Field Accuracy must be ≥ 90.</p>'; return; }
+  list.innerHTML=gates.map(function(g){
+    const scope=(g.testCase===""||g.testCase==="*")?'<span class="prof-top">ALL cases</span>':'<span class="prof-top">'+esc(g.testCase)+'</span>';
+    const fld=g.field?(' <span style="color:#00d4ff">['+esc(g.field)+']</span>'):'';
+    return '<div class="gate-item">'
+      +'<span class="gate-sev '+(g.severity==="fail"?"sev-fail":"sev-warn")+'">'+g.severity.toUpperCase()+'</span>'
+      +'<span style="flex:1">'+(GATE_METRIC_LABEL[g.metric]||g.metric)+fld+' <strong>'+(GATE_OP_TEXT[g.operator]||g.operator)+' '+g.threshold+'</strong></span>'
+      +scope
+      +'<button class="btn-secondary" style="margin:0;padding:3px 10px;font-size:11px" onclick="deleteGate('+g.id+')">🗑</button>'
+      +'</div>';
+  }).join("");
+}
+async function addGate(){
+  const metric=$('gateMetric').value;
+  const threshold=parseFloat($('gateThreshold').value);
+  if(isNaN(threshold)){alert("Enter a numeric threshold.");return;}
+  const scope=$('gateScope').value;
+  const tc=currentTestCase();
+  if(scope==="case" && !tc){alert("Enter a Test Case No in step 6 first, or choose scope = All cases.");return;}
+  const body={
+    testCase: scope==="global"?"*":tc,
+    metric:metric, field:$('gateField').value.trim(),
+    operator:$('gateOperator').value, threshold:threshold,
+    severity:$('gateSeverity').value, enabled:true
+  };
+  try {
+    const res=await fetch(API+"/db/gates",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const d=await res.json();
+    if(d.detail) throw new Error(JSON.stringify(d.detail));
+    $('gateField').value=""; $('gateThreshold').value="";
+    showToast("✓ Quality gate added");
+    loadGates();
+  } catch(e){ alert("Failed to add gate: "+e.message); }
+}
+async function deleteGate(id){
+  if(!confirm("Delete this quality gate?")) return;
+  try { await fetch(API+"/db/gates/"+id,{method:"DELETE"}); loadGates(); }
+  catch(e){ alert("Delete failed: "+e.message); }
+}
+
+/* ============ v9.3 GATE BADGE + ANOMALY ALERTS ============ */
+function renderGateAndAlerts(stats){
+  const slot=$('gateBadgeSlot');
+  const gs=stats&&stats.gate_status?stats.gate_status:"";
+  slot.innerHTML=gs?('<span class="gate-badge gate-'+gs+'">'+(gs==="PASS"?"✓ ":gs==="FAIL"?"✕ ":"⚠ ")+"GATE "+gs+'</span>'):"";
+  const banner=$('alertBanner');
+  const alerts=(stats&&stats.alerts)||[];
+  if(!alerts.length){ banner.style.display="none"; banner.innerHTML=""; return; }
+  const items=alerts.map(function(a){
+    const icon=a.kind==="gate"?"🛡️":"⚠";
+    return '<div class="alert-item sev-'+(a.severity||"medium")+'">'
+      +'<span class="a-icon">'+icon+'</span>'
+      +'<div><div class="a-title">'+esc(a.title||"Alert")+'</div>'
+      +'<div class="a-detail">'+esc(a.detail||"")+'</div></div></div>';
+  }).join("");
+  banner.style.display="block";
+  banner.innerHTML='<div class="alert-banner-head">🚨 '+alerts.length+' alert'+(alerts.length>1?"s":"")+' detected</div>'+items;
+}
+
+/* ============ v9.3 ROOT CAUSE ANALYSIS ============ */
+function populateInsightsFields(){
+  const sel=$('insightsFieldSelect');
+  const box=$('insightsBox');
+  const withMismatch=fieldSummaryData.filter(function(f){return f.mismatched>0||f.null_mismatch>0;});
+  if(!withMismatch.length){ box.style.display="none"; return; }
+  box.style.display="block";
+  sel.innerHTML='<option value="">— Select a field —</option>'
+    +withMismatch.map(function(f){return '<option value="'+esc(f.field)+'">'+esc(f.field)+' ('+(f.mismatched+f.null_mismatch).toLocaleString()+' mismatches)</option>';}).join("");
+  $('insightsContent').innerHTML='<p style="color:#4b6280;font-size:12px">Select a field above to analyze its mismatch patterns.</p>';
+  $('insightsField').innerText="";
+  // auto-run on the worst field
+  sel.value=withMismatch[0].field; runRootCause();
+}
+function toggleInsights(){$('insightsBody').classList.toggle('hidden');$('insightsHead').classList.toggle('collapsed');}
+async function runRootCause(){
+  const field=$('insightsFieldSelect').value;
+  if(!field||!currentJobId){ $('insightsContent').innerHTML='<p style="color:#4b6280;font-size:12px">Select a field to analyze.</p>'; $('insightsField').innerText=""; return; }
+  $('insightsContent').innerHTML='<p style="color:#7a8fa8;font-size:12px">Analyzing patterns…</p>';
+  try {
+    const res=await fetch(API+"/db/root-cause/"+currentJobId+"?field="+encodeURIComponent(field));
+    const d=await res.json();
+    if(d.detail) throw new Error(JSON.stringify(d.detail));
+    renderRootCause(d);
+  } catch(e){ $('insightsContent').innerHTML='<p style="color:#f87171;font-size:12px">Analysis failed: '+e.message+'</p>'; }
+}
+function renderRootCause(d){
+  $('insightsField').innerText='— '+esc(d.field)+' · '+(d.totalMismatches||0).toLocaleString()+' mismatches analyzed'+(d.capped?" (sampled)":"");
+  if(!d.totalMismatches){ $('insightsContent').innerHTML='<p style="color:#4ade80;font-size:12px">✓ No mismatches for this field.</p>'; return; }
+  const insights=(d.insights||[]).map(function(i){return '<div class="insight-line"><span class="i-bullet">▸</span><span>'+esc(i)+'</span></div>';}).join("");
+  function tbl(title,arr,valLabel){
+    if(!arr||!arr.length) return '<div class="rc-block"><h5>'+title+'</h5><p class="prof-top">—</p></div>';
+    const rows=arr.map(function(r){
+      const label=r.value!=null?esc(String(r.value).slice(0,50)):(r.prefix!=null?esc(r.prefix):"");
+      return '<tr><td>'+label+'</td><td style="text-align:right;color:#7a8fa8">'+r.count.toLocaleString()+'</td><td style="text-align:right;color:#00d4ff">'+r.pct+'%</td></tr>';
+    }).join("");
+    return '<div class="rc-block"><h5>'+title+'</h5><table><tbody>'+rows+'</tbody></table></div>';
+  }
+  $('insightsContent').innerHTML=
+    '<div style="background:#111827;border-radius:6px;padding:10px 14px;margin-bottom:12px">'+insights+'</div>'
+    +'<div class="rc-grid">'
+    +tbl("Top affected key prefixes",d.keyPrefixes)
+    +tbl("Most common source values",d.topSource)
+    +tbl("Most common target values",d.topTarget)
+    +'<div class="rc-block"><h5>Null direction</h5><table><tbody>'
+      +'<tr><td>Source is NULL (target has value)</td><td style="text-align:right;color:#7a8fa8">'+((d.nullDirection&&d.nullDirection.sourceNull)||0).toLocaleString()+'</td></tr>'
+      +'<tr><td>Target is NULL (source has value)</td><td style="text-align:right;color:#7a8fa8">'+((d.nullDirection&&d.nullDirection.targetNull)||0).toLocaleString()+'</td></tr>'
+    +'</tbody></table></div>'
+    +'</div>';
 }
 
 /* INIT */
