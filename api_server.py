@@ -413,6 +413,9 @@ def strip_numeric_punctuation(val: str) -> str:
 # Column-name pattern for fields that are "numeric flexible" by nature -- when
 # one of these is used as a join KEY, punctuation differences (e.g. a phone
 # number formatted "386-425-4700" vs "3864254700") must not break the match.
+# Matched against the column name with all non-alphanumeric characters removed,
+# so spacing/punctuation variants (e.g. "Tax ID", "Tax-ID", "NPI #", "SSN_NO")
+# are caught the same as the bare keyword.
 NUMERIC_KEY_FIELD_RE = re.compile(
     r'(phone|telephone|fax|mobile|cellphone|npi|taxid|ssn|ein|tin|zip)', re.IGNORECASE
 )
@@ -421,7 +424,8 @@ NUMERIC_KEY_FIELD_RE = re.compile(
 def normalize_key_component(col_name: str, value: Any) -> Any:
     if value is None:
         return None
-    if col_name and NUMERIC_KEY_FIELD_RE.search(col_name):
+    normalized_name = re.sub(r'[^A-Za-z0-9]', '', str(col_name or ''))
+    if normalized_name and NUMERIC_KEY_FIELD_RE.search(normalized_name):
         return re.sub(r'[\-\(\)\[\]\s,]', '', str(value))
     return value
 
