@@ -128,9 +128,22 @@ def init_db():
             source_value TEXT,
             target_value TEXT,
             status       TEXT,
+            src_key_raw  TEXT,
+            tgt_key_raw  TEXT,
             FOREIGN KEY (job_id) REFERENCES execution_history(job_id)
         )
     """)
+
+    existing_results_cols = {row[1] for row in cur.execute("PRAGMA table_info(execution_results)").fetchall()}
+    for col, typedef in [
+        # Unnormalized per-side key values, kept alongside the (possibly
+        # punctuation-stripped) matching key so "Copy Query" can reproduce
+        # the original source/target values instead of the normalized ones.
+        ("src_key_raw", "TEXT DEFAULT ''"),
+        ("tgt_key_raw", "TEXT DEFAULT ''"),
+    ]:
+        if col not in existing_results_cols:
+            cur.execute(f"ALTER TABLE execution_results ADD COLUMN {col} {typedef}")
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_job_results ON execution_results(job_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_job_status  ON execution_results(job_id, status)")
@@ -857,11 +870,12 @@ def save_results_batch(job_id, results_batch):
     cur = conn.cursor()
     cur.executemany("""
         INSERT INTO execution_results
-        (job_id, key_value, field, source_value, target_value, status)
-        VALUES (?,?,?,?,?,?)
+        (job_id, key_value, field, source_value, target_value, status, src_key_raw, tgt_key_raw)
+        VALUES (?,?,?,?,?,?,?,?)
     """, [
         (job_id, r.get("key",""), r.get("field",""),
-         r.get("source",""), r.get("target",""), r.get("status",""))
+         r.get("source",""), r.get("target",""), r.get("status",""),
+         r.get("src_key_raw",""), r.get("tgt_key_raw",""))
         for r in results_batch
     ])
     conn.commit()
@@ -881,7 +895,7 @@ def get_results_page(job_id, page=1, page_size=100, status_filter=None, field_fi
         where_extra += " AND field = ?"
         params.append(field_filter)
     cur.execute(
-        f"SELECT key_value, field, source_value, target_value, status "
+        f"SELECT key_value, field, source_value, target_value, status, src_key_raw, tgt_key_raw "
         f"FROM execution_results WHERE job_id = ?{where_extra} LIMIT ? OFFSET ?",
         params + [page_size, offset]
     )
@@ -899,7 +913,8 @@ def get_results_page(job_id, page=1, page_size=100, status_filter=None, field_fi
     conn.close()
     return {
         "results": [
-            {"key": r[0], "field": r[1], "source": r[2], "target": r[3], "status": r[4]}
+            {"key": r[0], "field": r[1], "source": r[2], "target": r[3], "status": r[4],
+             "srcKeyRaw": r[5] or "", "tgtKeyRaw": r[6] or ""}
             for r in rows
         ],
         "page": page, "pageSize": page_size,
@@ -1378,6 +1393,13 @@ def compare(req: Dict[str, Any]):
                 if not mappings: return ("NO_KEY",)
                 return tuple(normalize_key_component(m.get(side), row.get(m.get(side))) for m in mappings)
 
+            def build_display_key(row, mappings, side):
+                """Original (non-normalized) per-mapping values, for display/query
+                purposes -- e.g. so 'Copy Query' reproduces the real source/target
+                value even when the match itself used a punctuation-stripped key."""
+                if not mappings: return ("NO_KEY",)
+                return tuple(row.get(m.get(side)) for m in mappings)
+
             def build_src_dup_key(row):
                 # A source row is a "distinct" duplicate only when another row matches
                 # on BOTH the key-mapping fields AND every selected map field.
@@ -1416,21 +1438,26 @@ def compare(req: Dict[str, Any]):
                 key = build_key(s, key_map, "src")
                 processed_keys.add(key)
                 t   = tgt_lookup.get(key)
+                src_key_raw = str(build_display_key(s, key_map, "src"))
+                tgt_key_raw = str(build_display_key(t, key_map, "tgt")) if t is not None else ""
 
                 if build_src_dup_key(s) in src_dup_keys:
-                    results_batch.append({"key": str(key), "field": "KEY_CHECK", "source": "DUPLICATE", "target": "-", "status": "SOURCE_DUPLICATE"})
+                    results_batch.append({"key": str(key), "field": "KEY_CHECK", "source": "DUPLICATE", "target": "-", "status": "SOURCE_DUPLICATE",
+                                           "src_key_raw": src_key_raw, "tgt_key_raw": tgt_key_raw})
                     source_dup_count += 1
                     if len(results_batch) >= BATCH: save_results_batch(job_id, results_batch); results_batch = []
                     continue
 
                 if key in tgt_dup_keys:
-                    results_batch.append({"key": str(key), "field": "KEY_CHECK", "source": "-", "target": "DUPLICATE", "status": "TARGET_DUPLICATE"})
+                    results_batch.append({"key": str(key), "field": "KEY_CHECK", "source": "-", "target": "DUPLICATE", "status": "TARGET_DUPLICATE",
+                                           "src_key_raw": src_key_raw, "tgt_key_raw": tgt_key_raw})
                     target_dup_count += 1
                     if len(results_batch) >= BATCH: save_results_batch(job_id, results_batch); results_batch = []
                     continue
 
                 if t is None:
-                    results_batch.append({"key": str(key), "field": "KEY_CHECK", "source": "EXISTS", "target": "MISSING", "status": "SOURCE_ONLY"})
+                    results_batch.append({"key": str(key), "field": "KEY_CHECK", "source": "EXISTS", "target": "MISSING", "status": "SOURCE_ONLY",
+                                           "src_key_raw": src_key_raw, "tgt_key_raw": ""})
                     source_only_count += 1
                     keys_src_only     += 1
                     if len(results_batch) >= BATCH: save_results_batch(job_id, results_batch); results_batch = []
@@ -1450,7 +1477,9 @@ def compare(req: Dict[str, Any]):
                         "field":  src_col,
                         "source": str(sv) if sv is not None else "NULL",
                         "target": str(tv) if tv is not None else "NULL",
-                        "status": status
+                        "status": status,
+                        "src_key_raw": src_key_raw,
+                        "tgt_key_raw": tgt_key_raw,
                     })
                     if status == "MATCHED":        matched_count       += 1
                     elif status == "MISMATCH":     mismatch_count      += 1
@@ -1467,7 +1496,8 @@ def compare(req: Dict[str, Any]):
             for t in tgt_rows:
                 key = build_key(t, key_map, "tgt")
                 if key not in processed_keys and key not in tgt_dup_keys:
-                    results_batch.append({"key": str(key), "field": "KEY_CHECK", "source": "MISSING", "target": "EXISTS", "status": "TARGET_ONLY"})
+                    results_batch.append({"key": str(key), "field": "KEY_CHECK", "source": "MISSING", "target": "EXISTS", "status": "TARGET_ONLY",
+                                           "src_key_raw": "", "tgt_key_raw": str(build_display_key(t, key_map, "tgt"))})
                     target_only_count += 1
                     keys_tgt_only     += 1
                     if len(results_batch) >= BATCH: save_results_batch(job_id, results_batch); results_batch = []

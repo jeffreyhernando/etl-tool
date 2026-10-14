@@ -1444,20 +1444,31 @@ function buildKeyWhereLines(keyValues, side){
     return '['+col+'] '+op+' '+lit;
   });
 }
-function buildRowQueries(keyStr){
+function buildRowQueries(row){
   if(!state.keyMappings.length||!state.srcTable||!state.tgtTable) return null;
-  const keyValues=parseKeyTuple(keyStr);
-  if(!keyValues.length||keyValues.length!==state.keyMappings.length) return null;
-  const srcTbl='['+state.srcConfig.host+'].['+state.srcConfig.database+'].['+state.srcTable.schema+'].['+state.srcTable.name+']';
-  const tgtTbl='['+state.tgtConfig.host+'].['+state.tgtConfig.database+'].['+state.tgtTable.schema+'].['+state.tgtTable.name+']';
-  const srcWhere=buildKeyWhereLines(keyValues,"src").join('\nand ');
-  const tgtWhere=buildKeyWhereLines(keyValues,"tgt").join('\nand ');
-  return 'select * from '+srcTbl+'\nwhere '+srcWhere+'\n\n\nselect * from '+tgtTbl+'\nwhere '+tgtWhere;
+  // Prefer the original (non-normalized) per-side key values so the query
+  // reproduces the real row even when matching used a punctuation-stripped
+  // key (e.g. Tax ID "33-0676831" vs "330676831"). Fall back to the
+  // (possibly normalized) displayed key for results saved before this field
+  // existed.
+  const hasRaw    = !!(row.srcKeyRaw || row.tgtKeyRaw);
+  const srcValues = parseKeyTuple(hasRaw ? row.srcKeyRaw : row.key);
+  const tgtValues = parseKeyTuple(hasRaw ? row.tgtKeyRaw : row.key);
+  const parts=[];
+  if(srcValues.length===state.keyMappings.length){
+    const srcTbl='['+state.srcConfig.host+'].['+state.srcConfig.database+'].['+state.srcTable.schema+'].['+state.srcTable.name+']';
+    parts.push('select * from '+srcTbl+'\nwhere '+buildKeyWhereLines(srcValues,"src").join('\nand '));
+  }
+  if(tgtValues.length===state.keyMappings.length){
+    const tgtTbl='['+state.tgtConfig.host+'].['+state.tgtConfig.database+'].['+state.tgtTable.schema+'].['+state.tgtTable.name+']';
+    parts.push('select * from '+tgtTbl+'\nwhere '+buildKeyWhereLines(tgtValues,"tgt").join('\nand '));
+  }
+  return parts.length ? parts.join('\n\n\n') : null;
 }
 function copyRowQuery(idx){
   const row=lastResultsRows[idx];
   if(!row) return;
-  const q=buildRowQueries(row.key);
+  const q=buildRowQueries(row);
   if(!q){ showToast("Can't build query — key mapping unavailable for this row"); return; }
   navigator.clipboard.writeText(q)
     .then(function(){ showToast("✓ Query copied — paste into SSMS to investigate"); })
