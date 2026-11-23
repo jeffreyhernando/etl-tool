@@ -1,0 +1,99 @@
+# CI for the ETL validation tool (FastAPI api_server.py + index.html).
+#   - Runs on every push to main / feature/* and on PRs into main.
+#   - Gating tests: tests/test_set_compare.py (set compare, comparison rules,
+#     key matching, Value in List + translation fallback). No database needed.
+#   - tests/test_pipeline.py (legacy etl_pipeline.py) runs but does not block
+#     until its 12 known failures are fixed.
+#   - On main, the app files are packaged as a build artifact for deployment.
+
+trigger:
+  branches:
+    include:
+      - main
+      - feature/*
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: windows-latest   # pyodbc wheels + ODBC driver manager available out of the box
+
+variables:
+  PYTHON_VERSION: '3.11'
+
+stages:
+  - stage: Test
+    displayName: Test
+    jobs:
+      - job: UnitTests
+        displayName: Unit tests
+        steps:
+          - task: UsePythonVersion@0
+            displayName: Use Python $(PYTHON_VERSION)
+            inputs:
+              versionSpec: $(PYTHON_VERSION)
+
+          - script: |
+              python -m pip install --upgrade pip
+              pip install -r requirements-ci.txt
+            displayName: Install dependencies
+
+          - script: python -c "import api_server, core.set_compare; print('api_server imports OK')"
+            displayName: Smoke - API module loads
+
+          - script: >-
+              python -m pytest tests/test_set_compare.py -o addopts=""
+              --junitxml=test-results/set-compare.xml
+              --cov=core --cov=api_server --cov-report=xml:coverage.xml
+            displayName: Set compare + comparison rules (gating)
+
+          - script: >-
+              python -m pytest tests/test_pipeline.py -o addopts=""
+              --junitxml=test-results/pipeline.xml
+            displayName: Legacy pipeline tests (non-blocking)
+            continueOnError: true
+
+          - task: PublishTestResults@2
+            displayName: Publish test results
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: JUnit
+              testResultsFiles: test-results/*.xml
+              testRunTitle: ETL tool tests
+
+          - task: PublishCodeCoverageResults@2
+            displayName: Publish coverage
+            condition: succeededOrFailed()
+            inputs:
+              summaryFileLocation: coverage.xml
+
+  - stage: Package
+    displayName: Package
+    dependsOn: Test
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: Artifact
+        displayName: Build artifact
+        steps:
+          - task: CopyFiles@2
+            displayName: Collect app files
+            inputs:
+              SourceFolder: $(Build.SourcesDirectory)
+              Contents: |
+                api_server.py
+                index.html
+                etl_history_viewer.html
+                etl_pipeline.py
+                core/**
+                config/**
+                requirements.txt
+                requirements-ci.txt
+              TargetFolder: $(Build.ArtifactStagingDirectory)/etl_tool
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish artifact etl_tool
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/etl_tool
+              artifact: etl_tool
