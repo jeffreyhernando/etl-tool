@@ -5,6 +5,12 @@ Changes from v9.1:
     before comparing, so "1400 E BOULDER STREET,SUITE 2508" matches "1400 E BOULDER ST"
   - address2_suite_ignored: new rule — treats null/empty source vs suite-only target
     as MATCHED (suite data is expected to live in address field on source side)
+Set compare (v9.4):
+  - /db/compare with setCompare.enabled compares items per key, where each side is a
+    list column (JSON array / CSV, e.g. SpecialtyJSON) or item rows (e.g.
+    Compass_ProviderSpecialty.Spec_ID, or raw Specialty1 + Specialty2 text), with a
+    pasted or table-driven crosswalk (text → SpecId, UNMAPPED), remap pairing,
+    primary-item and reference-lookup checks. Logic lives in core/set_compare.py.
 """
 
 from fastapi import FastAPI, HTTPException, Query
@@ -25,6 +31,13 @@ from datetime import datetime, date as date_cls
 
 from typing import Dict, Any, List, Optional
 from threading import Thread, Lock, Event
+
+from core.set_compare import (
+    ALL_SET_STATUSES, PROBLEM_STATUSES, SUMMARY_STATUSES,
+    INVALID_SOURCE_JSON, INVALID_TARGET_JSON,
+    normalize_item, items_from_row, merge_items, parse_crosswalk, build_crosswalk,
+    merge_crosswalks, parse_id_list, compare_item_sets, summarize_set_outcomes,
+)
 
 app = FastAPI(
     title="ETL Engine Enterprise - Optimized (v9.2 with Business Rules)",
@@ -99,6 +112,8 @@ def init_db():
         # v9.3 Observability: quality-gate verdict + serialized anomaly alerts
         ("gate_status",       "TEXT    DEFAULT ''"),   # PASS | WARNING | FAIL | ''
         ("alerts",            "TEXT    DEFAULT ''"),    # JSON list of anomaly dicts
+        # v9.4 Set compare: compare_mode + per-status set counts (JSON dict)
+        ("extra_stats",       "TEXT    DEFAULT ''"),
     ]:
         if col not in existing:
             cur.execute(f"ALTER TABLE execution_history ADD COLUMN {col} {typedef}")
@@ -164,7 +179,7 @@ def reload_jobs_from_db():
                total_records, matched, mismatched, source_only, target_only,
                null_mismatches, source_duplicates, target_duplicates,
                src_row_count, tgt_row_count,
-               keys_in_both, keys_src_only, keys_tgt_only
+               keys_in_both, keys_src_only, keys_tgt_only, extra_stats
         FROM execution_history
         ORDER BY execution_date DESC
         LIMIT 500
@@ -197,11 +212,27 @@ def reload_jobs_from_db():
                     "keys_in_both":      row[15] or 0,
                     "keys_src_only":     row[16] or 0,
                     "keys_tgt_only":     row[17] or 0,
+                    **_parse_extra_stats(row[18]),
                 }
             }
             restored += 1
 
     print(f"[startup] Restored {restored} jobs from SQLite.")
+
+
+# Stats keys persisted in execution_history.extra_stats (not in fixed columns).
+EXTRA_STAT_KEYS = ("compare_mode", "set_counts", "target_scoped", "lookup_error",
+                   "crosswalk_entries", "list_translation_entries", "list_translation_hits",
+                   "list_translation_error")
+
+def _parse_extra_stats(raw):
+    if not raw:
+        return {}
+    try:
+        val = json.loads(raw)
+        return val if isinstance(val, dict) else {}
+    except Exception:
+        return {}
 
 reload_jobs_from_db()
 
@@ -435,11 +466,19 @@ NUMERIC_KEY_FIELD_RE = re.compile(
 
 
 def normalize_key_component(col_name: str, value: Any) -> Any:
+    """
+    Key value used for MATCHING only (display/query keys keep the original).
+    Text keys are trimmed and case-insensitive, the way SQL Server compares them
+    under the usual CI collation -- e.g. CHAR-padded 'CHIP      ' matches 'CHIP',
+    and 'Main St' matches an upper-cased 'MAIN ST'.
+    """
     if value is None:
         return None
     normalized_name = re.sub(r'[^A-Za-z0-9]', '', str(col_name or ''))
     if normalized_name and NUMERIC_KEY_FIELD_RE.search(normalized_name):
-        return re.sub(r'[\-\(\)\[\]\s,]', '', str(value))
+        return re.sub(r'[\-\(\)\[\]\s,]', '', str(value)).upper()
+    if isinstance(value, str):
+        return value.strip().upper()
     return value
 
 
@@ -508,10 +547,128 @@ def is_null_or_empty(val: Any) -> bool:
     return False
 
 
+def _norm_label(value: Any) -> str:
+    """
+    Specialty-style name for loose matching:
+      'Anesthesiology (DO)' -> 'ANESTHESIOLOGY'      (bracketed notes dropped)
+      'Allergy & Immunology' == 'Allergy - Immunology'   ('&' / 'and' ignored)
+      'Pediatrics' == 'Pediatric', 'Orthopaedic' == 'Orthopedic'
+    """
+    s = re.sub(r"\([^)]*\)", " ", str(value)).upper().replace("AE", "E")
+    words = re.sub(r"[^A-Z0-9]+", " ", s).split()
+    words = [w[:-1] if len(w) > 4 and w.endswith("S") and not w.endswith("SS") else w
+             for w in words if w != "AND"]
+    return " ".join(words)
+
+
+def _whole_words_in(part: str, whole: str) -> bool:
+    return len(whole) > len(part) and re.search(r"\b" + re.escape(part) + r"\b", whole) is not None
+
+
+def _list_values(value: Any) -> Optional[List[str]]:
+    """Every value in a JSON list cell ([{"SpecId":"102","Specialty":"Orthopedic"}, ...],
+    both the IDs and the names), or the parts of a comma list. None = unreadable JSON."""
+    s = str(value).strip()
+    if s[:1] in ("[", "{"):
+        try:
+            data = json.loads(s)
+        except (ValueError, TypeError):
+            return None
+        out: List[str] = []
+        for item in (data if isinstance(data, list) else [data]):
+            if isinstance(item, dict):
+                out.extend(str(v) for v in item.values() if v is not None)
+            elif item is not None:
+                out.append(str(item))
+        return out
+    return [p for p in re.split(r"[,;|]", s) if p.strip()]
+
+
+def value_in_list_match(src: Any, tgt: Any, translation: Optional[Dict[str, set]] = None) -> bool:
+    """
+    Source holds one value, target holds a list (JSON or comma-separated).
+    Matched when, ignoring case, punctuation, plurals, '&'/'and' and notes like '(DO)':
+      - a list item has the same name             'Cardio-Vascular Disease' = 'Cardiovascular Disease'
+      - the source name sits inside a list name   'Family Practice' in 'Family Practice / General Practice'
+      - a list name sits inside the source name   'Podiatry' in 'Podiatry-Foot and Ankle surgery'
+      - every word of a multi-word source name is in a list name   'Plastic Surgery'
+      - otherwise, the translation table maps the source name to an ID in the list
+                                                  'Family Medicine' -> 89 (e.g. Specialty_Conversions)
+    """
+    values = _list_values(tgt)
+    sn = _norm_label(src)
+    if not values or not sn:
+        return False
+    names = [_norm_label(v) for v in values]
+    compact, src_words = sn.replace(" ", ""), set(sn.split())
+    for n in names:
+        if not n:
+            continue
+        if n == sn or n.replace(" ", "") == compact:
+            return True
+        if _whole_words_in(sn, n) or (len(n) >= 5 and _whole_words_in(n, sn)):
+            return True
+        if len(src_words) >= 2 and src_words <= set(n.split()):   # 'Plastic Surgery' ~ 'Plastic / Reconstructive Surgery'
+            return True
+        n_words = set(n.split())
+        if len(n_words) >= 2 and n_words <= src_words:            # 'General Surgery-Hand' ~ 'Hand Surgery'
+            return True
+    if translation:
+        ids = translation.get(sn) or set()
+        listed = {str(v).strip().lstrip("0") or "0" for v in values}
+        return any(i in listed for i in ids)
+    return False
+
+
+def parse_list_translation_text(text: Any) -> Dict[str, set]:
+    """Pasted 'name = id' lines, e.g. 'Pain Medicine = 103' or 'Otolaryngology = 74, 328'."""
+    out: Dict[str, set] = {}
+    for line in str(text or "").splitlines():
+        m = re.match(r"\s*(.+?)\s*(?:=>|->|→|=|:)\s*([\d\s,;|]+)\s*$", line)
+        if not m:
+            continue
+        name = _norm_label(m.group(1))
+        for v in re.split(r"[\s,;|]+", m.group(2)):
+            if v.strip():
+                out.setdefault(name, set()).add(v.strip().lstrip("0") or "0")
+    return out
+
+
+def load_list_translation(cur, cfg: Dict[str, Any]) -> Dict[str, set]:
+    """Name -> IDs from a mapping table, e.g. CAS.dbo.Specialty_Conversions
+    specialty -> fType, pType (several target columns allowed)."""
+    table = ".".join(_quote_ident(p) for p in str(cfg.get("table", "")).split("."))
+    to_cols = [c.strip() for c in re.split(r"[,;+]", str(cfg.get("toCol") or "")) if c.strip()]
+    if not to_cols or not cfg.get("fromCol"):
+        raise Exception("translation table needs a name column and an ID column")
+    sql = f"SELECT {_quote_ident(cfg['fromCol'])}, {', '.join(_quote_ident(c) for c in to_cols)} FROM {table}"
+    params = []
+    if cfg.get("filterCol") and str(cfg.get("filterValue") or "").strip():
+        sql += f" WHERE {_quote_ident(cfg['filterCol'])} = ?"
+        params.append(str(cfg["filterValue"]).strip())
+    cur.execute(sql, params)
+    out: Dict[str, set] = {}
+    for row in cur.fetchall():
+        name = _norm_label(row[0]) if row[0] is not None else ""
+        if not name:
+            continue
+        for v in row[1:]:
+            if v is None or str(v).strip() == "":
+                continue
+            sv = str(v).strip()
+            try:
+                sv = str(int(float(sv)))
+            except ValueError:
+                pass
+            out.setdefault(name, set()).add(sv.lstrip("0") or "0")
+    return out
+
+
 # =========================================================
 #  UNIFIED COMPARISON LOGIC  (v9.2)
 # =========================================================
-def compare_field_values(src: Any, tgt: Any, field_name: str, rule: str) -> str:
+def compare_field_values(src: Any, tgt: Any, field_name: str, rule: str,
+                         translation: Optional[Dict[str, set]] = None) -> str:
     """
     Returns: "MATCHED", "MISMATCH", or "NULL_MISMATCH"
 
@@ -521,6 +678,7 @@ def compare_field_values(src: Any, tgt: Any, field_name: str, rule: str) -> str:
     last_name_with_suffix      -- embedded suffix (Jr, Sr, II, III) / compound last name
     date_flexible              -- compares calendar date regardless of format/zero-padding
     numeric_flexible           -- strips ()-. for phones, IDs, numbers
+    value_in_list              -- source value found in the target JSON / comma list
     boolean_match              -- Y/N, true/false, 1/0, yes/no
     gender_match               -- MALE/M, FEMALE/F, UNKNOWN/U, case-insensitive
     exact                      -- case-sensitive exact match
@@ -547,6 +705,10 @@ def compare_field_values(src: Any, tgt: Any, field_name: str, rule: str) -> str:
         return "MATCHED"
     elif src_null or tgt_null:
         return "NULL_MISMATCH"
+
+    # ONE VALUE vs A LIST (e.g. Specialty text vs SpecialtyJSON)
+    if rule == "value_in_list":
+        return "MATCHED" if value_in_list_match(src, tgt, translation) else "MISMATCH"
 
     # DATE RULES
     if rule == "date_flexible":
@@ -661,6 +823,11 @@ def build_where_clause(filters, col_prefix=""):
             continue
         col      = f"[{field}]" if not col_prefix else f"{col_prefix}.[{field}]"
         safe_col = f"TRY_CONVERT(NVARCHAR(500), {col})"
+        # Explicit "Is Null" / "Is Not Null" operators from the UI (no value needed).
+        if operator == "is_null":
+            conditions.append(f"{col} IS NULL"); continue
+        if operator == "is_not_null":
+            conditions.append(f"{col} IS NOT NULL"); continue
         val_is_null = (value is None or str(value).strip().lower() in ("null", ""))
         if val_is_null:
             if operator in ("equals", ""):
@@ -720,6 +887,79 @@ def fetch_with_filters(cur, schema, table, cols, limit, filters=None,
             break
     print(f"Fetched {len(all_rows)} rows from [{schema}].[{table}]")
     return all_rows
+
+
+def fetch_by_key_values(cur, schema, table, cols, key_col, key_values, filters=None,
+                        chunk_size=1000, cancel_event=None):
+    """
+    Fetches every row whose key_col is in key_values (chunked IN lists, under
+    SQL Server's 2100-parameter cap). Used by set compare so a one-to-many
+    target (e.g. Compass_ProviderSpecialty) is scoped to the source keys
+    instead of row-limited or fetched whole.
+    """
+    col_sql = ", ".join(f"[{c}]" for c in cols)
+    where_clause, filter_params = build_where_clause(filters)
+    values = list(dict.fromkeys(v for v in key_values if v is not None))
+    all_rows = []
+    for i in range(0, len(values), chunk_size):
+        if cancel_event and cancel_event.is_set():
+            raise Exception("Job cancelled by user")
+        chunk = values[i:i + chunk_size]
+        sql = (
+            f"SELECT {col_sql} FROM [{schema}].[{table}]"
+            f" WHERE [{key_col}] IN ({', '.join('?' * len(chunk))}) {where_clause}"
+        )
+        cur.execute(sql, chunk + filter_params)
+        all_rows.extend(dict(zip(cols, row)) for row in cur.fetchall())
+    print(f"Fetched {len(all_rows)} rows from [{schema}].[{table}] for {len(values)} keys")
+    return all_rows
+
+
+_SQL_IDENT_RE = re.compile(r"^[A-Za-z0-9_ $#@\-]+$")
+
+def _quote_ident(name):
+    name = str(name or "").strip().strip("[]")
+    if not name or not _SQL_IDENT_RE.match(name):
+        raise Exception(f"Invalid SQL identifier: {name!r}")
+    return f"[{name}]"
+
+
+def query_reference_lookup(cur, lookup_cfg, items, cast="int", chunk_size=1000):
+    """
+    Loads {item: {"label", "category"}} from a reference table such as
+    CAS.dbo.Specialty_Listing (1-3 part name, run on the target connection so
+    other databases on the same server are reachable).
+    """
+    table = ".".join(_quote_ident(p) for p in str(lookup_cfg.get("table", "")).split("."))
+    key_col = _quote_ident(lookup_cfg.get("keyCol"))
+    label_col = lookup_cfg.get("labelCol") or ""
+    cat_cols = lookup_cfg.get("categoryCols") or []
+    if isinstance(cat_cols, str):
+        cat_cols = [c.strip() for c in cat_cols.split(",") if c.strip()]
+    select_cols = [key_col] + ([_quote_ident(label_col)] if label_col else []) + [_quote_ident(c) for c in cat_cols]
+    # Non-numeric items under an int cast can't be in an int key column, and
+    # would make SQL Server's IN conversion fail -- they surface as INVALID_ITEM_ID.
+    values = [v for v in dict.fromkeys(items)
+              if v is not None and (cast != "int" or isinstance(v, int))]
+    lookup = {}
+    for i in range(0, len(values), chunk_size):
+        chunk = values[i:i + chunk_size]
+        cur.execute(
+            f"SELECT {', '.join(select_cols)} FROM {table}"
+            f" WHERE {key_col} IN ({', '.join('?' * len(chunk))})",
+            chunk,
+        )
+        for row in cur.fetchall():
+            item = normalize_item(row[0], cast)
+            if item is None:
+                continue
+            label = str(row[1]).strip() if label_col and row[1] is not None else ""
+            cats = row[2:] if label_col else row[1:]
+            lookup[item] = {
+                "label": label,
+                "category": tuple(str(c).strip() if c is not None else None for c in cats) if cat_cols else None,
+            }
+    return lookup
 
 # ================= DEDUPLICATION =================
 
@@ -838,8 +1078,8 @@ def save_to_history(job_id, test_case, status, accuracy, stats,
          null_mismatches, source_duplicates, target_duplicates,
          src_row_count, tgt_row_count,
          keys_in_both, keys_src_only, keys_tgt_only,
-         gate_status, alerts)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         gate_status, alerts, extra_stats)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         job_id, test_case, datetime.now().isoformat(), status,
         accuracy,
@@ -860,6 +1100,7 @@ def save_to_history(job_id, test_case, status, accuracy, stats,
         stats.get("keys_tgt_only",     0),
         gate_status or "",
         json.dumps(alerts or []),
+        json.dumps({k: stats[k] for k in EXTRA_STAT_KEYS if k in stats}),
     ))
     conn.commit()
     conn.close()
@@ -1101,7 +1342,8 @@ def field_accuracy_for(job_id, field):
     cur.execute("""
         SELECT
             SUM(CASE WHEN status='MATCHED'       THEN 1 ELSE 0 END),
-            SUM(CASE WHEN status='MISMATCH'      THEN 1 ELSE 0 END),
+            SUM(CASE WHEN status NOT IN ('MATCHED','NULL_MISMATCH','SET_EXTRA_ALLOWED')
+                     THEN 1 ELSE 0 END),
             SUM(CASE WHEN status='NULL_MISMATCH' THEN 1 ELSE 0 END)
         FROM execution_results
         WHERE job_id = ? AND field = ?
@@ -1194,7 +1436,7 @@ def health():
         "gender_match",                # Auto-detects MALE/M, FEMALE/F, UNKNOWN/U
         "exact",                       # Exact string match
         "string_normalized"            # Case-insensitive exact match
-    ]}
+    ], "compareModes": ["row", "set"], "setStatuses": list(ALL_SET_STATUSES)}
 
 @app.post("/db/connect")
 def connect(cfg: DBConfig):
@@ -1303,6 +1545,305 @@ def share_job(job_id: str):
         "alerts":           _parse_alerts(row[21]),
     }
 
+# ================= SET COMPARE (v9.4) =================
+
+def _set_sides(set_cfg):
+    """
+    Side configs for set compare. Accepts the nested form
+      {"src": {shape, listCol, format, itemKey, itemLabel, itemCols, labelCol, cast}, "tgt": {...}}
+    or the original flat form (srcListCol/srcFormat/itemKey/itemLabel +
+    tgtItemCol/tgtLabelCol + itemCast) = source list vs target rows.
+    """
+    cast = set_cfg.get("itemCast") or "int"
+    src = dict(set_cfg.get("src") or {
+        "shape": "list", "listCol": set_cfg.get("srcListCol"), "format": set_cfg.get("srcFormat"),
+        "itemKey": set_cfg.get("itemKey"), "itemLabel": set_cfg.get("itemLabel"), "cast": cast})
+    tgt = dict(set_cfg.get("tgt") or {
+        "shape": "rows", "itemCols": [set_cfg.get("tgtItemCol")] if set_cfg.get("tgtItemCol") else [],
+        "labelCol": set_cfg.get("tgtLabelCol"), "cast": cast})
+    for side in (src, tgt):
+        side["shape"]  = "list" if side.get("shape") == "list" else "rows"
+        side["format"] = (side.get("format") or "json").lower()
+        side["cast"]   = side.get("cast") or cast
+        cols = side.get("itemCols") or []
+        if isinstance(cols, str):
+            cols = [c.strip() for c in cols.split(",") if c.strip()]
+        side["itemCols"] = [c for c in cols if c]
+    return src, tgt
+
+
+def _validate_side(side, name):
+    if side["shape"] == "list":
+        if not side.get("listCol"):
+            raise Exception(f"Set compare: select the {name} list column (e.g. SpecialtyJSON)")
+        if side["format"] == "json" and not side.get("itemKey"):
+            raise Exception(f"Set compare: enter the {name} JSON item key (e.g. SpecId)")
+    elif not side["itemCols"]:
+        raise Exception(f"Set compare: select at least one {name} item column (e.g. Spec_ID or Specialty1)")
+
+
+def _side_cols(side):
+    if side["shape"] == "list":
+        return [side["listCol"]]
+    return side["itemCols"] + ([side["labelCol"]] if side.get("labelCol") else [])
+
+
+def _side_field(side):
+    return side["listCol"] if side["shape"] == "list" else "+".join(side["itemCols"])
+
+
+def query_crosswalk_table(cur, xw_cfg, src_cast, tgt_cast):
+    """
+    Loads a source-item → target-item crosswalk from a mapping table, e.g.
+    raw specialty text → SpecId, optionally limited to one source code.
+    toCol may list several columns ("fType, pType"): each non-null one is a
+    valid target for that source value.
+    """
+    table = ".".join(_quote_ident(p) for p in str(xw_cfg.get("table", "")).split("."))
+    to_cols = [c.strip() for c in re.split(r"[,;+]", str(xw_cfg.get("toCol") or "")) if c.strip()]
+    if not to_cols:
+        raise Exception("crosswalk table needs a target value column")
+    from_col = _quote_ident(xw_cfg.get("fromCol"))
+    sql = f"SELECT {from_col}, {', '.join(_quote_ident(c) for c in to_cols)} FROM {table}"
+    params = []
+    if xw_cfg.get("filterCol") and str(xw_cfg.get("filterValue") or "").strip():
+        sql += f" WHERE {_quote_ident(xw_cfg['filterCol'])} = ?"
+        params.append(str(xw_cfg["filterValue"]).strip())
+    cur.execute(sql, params)
+    pairs = [(r[0], v) for r in cur.fetchall() for v in r[1:]]
+    return build_crosswalk(pairs, src_cast, tgt_cast)
+
+
+def run_set_compare(job_id, req, key_map, set_cfg, src_filters, tgt_filters,
+                    src_conn, tgt_conn, limit, check_cancel, cancel_ev):
+    """
+    Compares items per parent key, where each side is a list column (JSON/CSV)
+    or item rows (one or more columns, many rows per key). Writes per-item
+    result rows and returns a stats dict shaped like the row-compare stats.
+
+      SpecialtyJSON (list) vs Compass_ProviderSpecialty.Spec_ID (rows), key Tothpdpyid
+      Providers.Specialty1+Specialty2 text (rows) vs SpecialtyJSON (list),
+        keys outer_code + outer_num, via a text → SpecId crosswalk table
+
+    setCompare config (besides src / tgt side configs, see _set_sides):
+      srcPrimaryCol                       -- e.g. Spec1_id (target item type)
+      crosswalk ("712=100" / one "TEXT=ID" per line), crosswalkRequired
+      crosswalkTable {table, fromCol, toCol, filterCol, filterValue, connection}
+      allowedExtras ("100, 240")
+      lookup {table, keyCol, labelCol, categoryCols}   -- target item reference table
+      scopeTarget (default true)
+    """
+    src_tbl, tgt_tbl = req["srcTable"], req["tgtTable"]
+    src_side, tgt_side = _set_sides(set_cfg)
+    primary_col  = set_cfg.get("srcPrimaryCol") or ""
+    allowed      = parse_id_list(set_cfg.get("allowedExtras"), tgt_side["cast"])
+    lookup_cfg   = set_cfg.get("lookup") or {}
+    xw_table_cfg = set_cfg.get("crosswalkTable") or {}
+    require_xw   = bool(set_cfg.get("crosswalkRequired"))
+    crosswalk    = parse_crosswalk(set_cfg.get("crosswalk"), src_side["cast"], tgt_side["cast"])
+
+    if not key_map:
+        raise Exception("Set compare needs a key mapping for the parent key (e.g. Tothpdpyid ↔ TothpdpyId)")
+    _validate_side(src_side, "source")
+    _validate_side(tgt_side, "target")
+
+    src_key_cols = [m.get("src") for m in key_map]
+    tgt_key_cols = [m.get("tgt") for m in key_map]
+    src_cols = list(dict.fromkeys(src_key_cols + _side_cols(src_side) + ([primary_col] if primary_col else [])))
+    tgt_cols = list(dict.fromkeys(tgt_key_cols + _side_cols(tgt_side)))
+    src_field, tgt_field = _side_field(src_side), _side_field(tgt_side)
+
+    def build_key(row, side):
+        return tuple(normalize_key_component(m.get(side), row.get(m.get(side))) for m in key_map)
+
+    def group(rows, side_cfg, key_cols, side):
+        groups = {}
+        for r in rows:
+            g = groups.setdefault(build_key(r, side), {
+                "items": [], "error": None, "raw": "", "primary": None,
+                "display": str(tuple(r.get(c) for c in key_cols))})
+            items, err = items_from_row(r, side_cfg)
+            if err and not g["error"]:
+                g["error"], g["raw"] = err, str(r.get(side_cfg.get("listCol")))[:300]
+            merge_items(g["items"], items)
+            if primary_col and side == "src" and g["primary"] is None:
+                g["primary"] = normalize_item(r.get(primary_col), tgt_side["cast"])
+        return groups
+
+    try:
+        src_cur, tgt_cur = src_conn.cursor(), tgt_conn.cursor()
+        with lock: jobs[job_id]["progress"] = 10
+        check_cancel()
+        src_where, src_params = build_where_clause(src_filters)
+        tgt_where, tgt_params = build_where_clause(tgt_filters)
+        src_cur.execute(f"SELECT COUNT(*) FROM [{src_tbl['schema']}].[{src_tbl['name']}] WHERE 1=1 {src_where}", src_params)
+        src_row_count = src_cur.fetchone()[0]
+        tgt_cur.execute(f"SELECT COUNT(*) FROM [{tgt_tbl['schema']}].[{tgt_tbl['name']}] WHERE 1=1 {tgt_where}", tgt_params)
+        tgt_row_count = tgt_cur.fetchone()[0]
+        with lock: jobs[job_id]["progress"] = 20
+        check_cancel()
+
+        if xw_table_cfg.get("table"):
+            xw_cur = tgt_cur if xw_table_cfg.get("connection") == "target" else src_cur
+            try:
+                table_xw = query_crosswalk_table(xw_cur, xw_table_cfg, src_side["cast"], tgt_side["cast"])
+            except Exception as xe:
+                raise Exception(f"Crosswalk table {xw_table_cfg.get('table')} could not be read: {xe}")
+            crosswalk = merge_crosswalks(table_xw, crosswalk)
+
+        src_rows = fetch_with_filters(src_cur, src_tbl["schema"], src_tbl["name"], src_cols, limit, src_filters, cancel_event=cancel_ev)
+        # A list column holds the whole set, so keep one row per key; item rows
+        # are merged per key instead (e.g. Specialty1/2 over several raw rows).
+        if src_side["shape"] == "list":
+            src_rows, src_dedupe_removed = dedupe_rows(src_rows, src_key_cols)
+        else:
+            src_dedupe_removed = 0
+        with lock: jobs[job_id]["progress"] = 35
+        check_cancel()
+
+        # Scope the target to the source keys (on the most selective key), so the
+        # row limit and an unfilterable target table (no SourceCode on
+        # Compass_ProviderSpecialty) don't create false missing/extra results.
+        target_scoped = bool(set_cfg.get("scopeTarget", True))
+        if target_scoped:
+            scope_idx = max(range(len(key_map)),
+                            key=lambda i: len({r.get(src_key_cols[i]) for r in src_rows}))
+            tgt_rows = fetch_by_key_values(tgt_cur, tgt_tbl["schema"], tgt_tbl["name"], tgt_cols,
+                                           tgt_key_cols[scope_idx], [r.get(src_key_cols[scope_idx]) for r in src_rows],
+                                           tgt_filters, cancel_event=cancel_ev)
+        else:
+            tgt_rows = fetch_with_filters(tgt_cur, tgt_tbl["schema"], tgt_tbl["name"], tgt_cols, limit, tgt_filters, cancel_event=cancel_ev)
+        if tgt_side["shape"] == "list":
+            tgt_rows, tgt_dedupe_removed = dedupe_rows(tgt_rows, tgt_key_cols)
+        else:
+            # Many rows per key are expected -- dedupe on key + item, not key alone.
+            tgt_rows, tgt_dedupe_removed = dedupe_rows(tgt_rows, tgt_key_cols + tgt_side["itemCols"])
+        with lock: jobs[job_id]["progress"] = 55
+        check_cancel()
+
+        src_groups = group(src_rows, src_side, src_key_cols, "src")
+        tgt_groups = group(tgt_rows, tgt_side, tgt_key_cols, "tgt")
+
+        lookup, lookup_error = None, ""
+        if lookup_cfg.get("table") and lookup_cfg.get("keyCol"):
+            all_items = [i for g in tgt_groups.values() for i, _ in g["items"]]
+            all_items += [g["primary"] for g in src_groups.values() if g["primary"] is not None]
+            for g in src_groups.values():
+                for i, _ in g["items"]:
+                    v = crosswalk.get(i, None if require_xw else i)
+                    all_items.extend(v if isinstance(v, tuple) else ([v] if v is not None else []))
+            try:
+                lookup = query_reference_lookup(tgt_cur, lookup_cfg, all_items, tgt_side["cast"])
+            except Exception as le:
+                lookup_error = str(le)
+                print(f"[set-compare] reference lookup failed, continuing without it: {le}")
+    finally:
+        src_conn.close(); tgt_conn.close()
+    with lock: jobs[job_id]["progress"] = 60
+
+    field_for = {"list": src_field, "primary": primary_col, "lookup": f"{tgt_field} (lookup)"}
+    counts: Dict[str, int] = {s: 0 for s in ALL_SET_STATUSES}
+    keys_in_both = keys_src_only = keys_tgt_only = 0
+    source_only_count = target_only_count = 0
+    results_batch, BATCH = [], 1000
+
+    def emit(row):
+        nonlocal results_batch
+        results_batch.append(row)
+        if len(results_batch) >= BATCH:
+            save_results_batch(job_id, results_batch); results_batch = []
+
+    total_src = len(src_groups)
+    for idx, (key, g) in enumerate(src_groups.items()):
+        check_cancel()
+        t = tgt_groups.get(key)
+        src_key_raw = g["display"]
+        tgt_key_raw = t["display"] if t else ""
+        if t is None:
+            keys_src_only += 1
+        else:
+            keys_in_both += 1
+
+        if g["error"]:
+            emit({"key": str(key), "field": src_field, "source": g["raw"],
+                  "target": ", ".join(str(i) for i, _ in (t["items"] if t else [])) or "-",
+                  "status": INVALID_SOURCE_JSON, "src_key_raw": src_key_raw, "tgt_key_raw": tgt_key_raw})
+            counts[INVALID_SOURCE_JSON] += 1
+            continue
+        if t is not None and t["error"]:
+            emit({"key": str(key), "field": tgt_field,
+                  "source": ", ".join(str(i) for i, _ in g["items"]) or "-", "target": t["raw"],
+                  "status": INVALID_TARGET_JSON, "src_key_raw": src_key_raw, "tgt_key_raw": tgt_key_raw})
+            counts[INVALID_TARGET_JSON] += 1
+            continue
+
+        if t is None:
+            if not (tgt_side["shape"] == "rows" and target_scoped):
+                emit({"key": str(key), "field": "KEY_CHECK", "source": "EXISTS", "target": "MISSING",
+                      "status": "SOURCE_ONLY", "src_key_raw": src_key_raw, "tgt_key_raw": ""})
+                source_only_count += 1
+                continue
+            # Scoped item-rows target with no rows for this key: every source item
+            # is missing (e.g. a stale SpecialtyJSON left on the master row).
+            t_items = []
+        else:
+            t_items = t["items"]
+
+        for o in compare_item_sets(g["items"], t_items, crosswalk, allowed, lookup,
+                                   g["primary"], require_xw):
+            emit({"key": str(key), "field": field_for[o["kind"]], "source": o["source"],
+                  "target": o["target"], "status": o["status"],
+                  "src_key_raw": src_key_raw, "tgt_key_raw": tgt_key_raw})
+            counts[o["status"]] += 1
+
+        if idx % 200 == 0:
+            with lock:
+                jobs[job_id]["progress"] = int(60 + ((idx + 1) / total_src) * 30) if total_src else 90
+
+    # With a scoped target every target key came from the source, so
+    # TARGET_ONLY is only meaningful for unscoped fetches.
+    if not target_scoped:
+        for k, t in tgt_groups.items():
+            if k not in src_groups:
+                emit({"key": str(k), "field": "KEY_CHECK", "source": "MISSING", "target": "EXISTS",
+                      "status": "TARGET_ONLY", "src_key_raw": "", "tgt_key_raw": t["display"]})
+                target_only_count += 1
+                keys_tgt_only += 1
+    if results_batch:
+        save_results_batch(job_id, results_batch)
+
+    matched    = counts["MATCHED"]
+    mismatched = sum(counts[s] for s in PROBLEM_STATUSES)
+    total_keys     = keys_in_both + keys_src_only + keys_tgt_only
+    key_match_rate = round((keys_in_both / total_keys) * 100, 2) if total_keys else 0
+    field_accuracy = round((matched / (matched + mismatched)) * 100, 2) if (matched + mismatched) else 0
+    return {
+        "total":             sum(counts.values()) + source_only_count + target_only_count,
+        "matched":           matched,
+        "mismatched":        mismatched,
+        "source_only":       source_only_count,
+        "target_only":       target_only_count,
+        "null_mismatches":   0,
+        "source_duplicates": 0,
+        "target_duplicates": 0,
+        "src_row_count":     src_row_count,
+        "tgt_row_count":     tgt_row_count,
+        "accuracy":          field_accuracy,
+        "key_match_rate":    key_match_rate,
+        "field_accuracy":    field_accuracy,
+        "keys_in_both":      keys_in_both,
+        "keys_src_only":     keys_src_only,
+        "keys_tgt_only":     keys_tgt_only,
+        "src_dedupe_removed": src_dedupe_removed,
+        "tgt_dedupe_removed": tgt_dedupe_removed,
+        "dedupe_mode":        "set_key_item",
+        "compare_mode":       "set",
+        "set_counts":         counts,
+        "target_scoped":      target_scoped,
+        "lookup_error":       lookup_error,
+        "crosswalk_entries":  len(crosswalk),
+    }
+
 # ================= MAIN COMPARE ENDPOINT =================
 
 @app.post("/db/compare")
@@ -1327,10 +1868,15 @@ def compare(req: Dict[str, Any]):
         src_dedupe_fields = [m.get("src") for m in key_map if m.get("src")]
         tgt_dedupe_fields = [m.get("tgt") for m in key_map if m.get("tgt")]
 
+    # v9.4 Set compare: source list column vs many target rows per key.
+    set_cfg  = req.get("setCompare") or {}
+    set_mode = bool(set_cfg.get("enabled"))
+
     signature = json.dumps({
         "src": req.get("srcTable"), "tgt": req.get("tgtTable"),
         "keys": key_map, "fields": field_map,
-        "limit": req.get("limit"), "filters": filters
+        "limit": req.get("limit"), "filters": filters,
+        "set": set_cfg if set_mode else None,
     }, sort_keys=True)
 
     with lock:
@@ -1352,6 +1898,35 @@ def compare(req: Dict[str, Any]):
             if datetime.now().timestamp() > deadline:
                 raise Exception(f"Job timed out after {TIMEOUT_SECONDS}s")
 
+        def finish(stats):
+            # ── v9.3 Observability: evaluate quality gates + detect anomalies ──
+            test_case_name = req.get("testCaseNo", "N/A")
+            try:
+                gate_status, gate_alerts = evaluate_gates(test_case_name, job_id, stats)
+            except Exception as ge:
+                print(f"[gates] evaluation failed: {ge}")
+                gate_status, gate_alerts = "", []
+            try:
+                anomaly_alerts = detect_anomalies(test_case_name, job_id, stats)
+            except Exception as ae:
+                print(f"[anomaly] detection failed: {ae}")
+                anomaly_alerts = []
+            all_alerts = gate_alerts + anomaly_alerts
+            stats["gate_status"] = gate_status
+            stats["alerts"]      = all_alerts
+
+            save_to_history(job_id, test_case_name, "COMPLETED", stats["accuracy"], stats,
+                            gate_status=gate_status, alerts=all_alerts)
+            with lock:
+                jobs[job_id]["status"]   = "COMPLETED"
+                jobs[job_id]["progress"] = 100
+                jobs[job_id]["stats"]    = stats
+                execution_signatures.discard(signature)
+                cancel_events.pop(job_id, None)
+            print(f"=== ETL DONE (v9.2-BR) | mode={stats.get('compare_mode', 'row')} "
+                  f"kmr={stats['key_match_rate']}% acc={stats['field_accuracy']}% "
+                  f"gate={gate_status or '-'} alerts={len(all_alerts)} ===\n")
+
         try:
             print(f"\n=== ETL START (v9.2-BR) | JOB {job_id} ===")
             src_cfg = DBConfig(**req["srcConfig"])
@@ -1359,6 +1934,10 @@ def compare(req: Dict[str, Any]):
             limit   = safe_limit(req.get("limit", 100))
             src_conn = get_connection(src_cfg)
             tgt_conn = get_connection(tgt_cfg)
+            if set_mode:
+                finish(run_set_compare(job_id, req, key_map, set_cfg, src_filters, tgt_filters,
+                                       src_conn, tgt_conn, limit, check_cancel, cancel_ev))
+                return
             src_cur  = src_conn.cursor()
             tgt_cur  = tgt_conn.cursor()
             src_cols = list({x.get("src") for x in (key_map + field_map) if x.get("src")})
@@ -1379,6 +1958,25 @@ def compare(req: Dict[str, Any]):
             with lock: jobs[job_id]["progress"] = 40
             check_cancel()
             tgt_rows = fetch_with_filters(tgt_cur, req["tgtTable"]["schema"], req["tgtTable"]["name"], tgt_cols, limit, tgt_filters, cancel_event=cancel_ev)
+            # Optional name -> ID table for "Value in List" fields whose name doesn't match.
+            list_xw, lt_cfg, lt_error = None, req.get("listTranslation") or {}, ""
+            if any(f.get("rule") == "value_in_list" for f in field_map) and (lt_cfg.get("table") or lt_cfg.get("pasted")):
+                list_xw = parse_list_translation_text(lt_cfg.get("pasted"))
+                if lt_cfg.get("table"):
+                    # Try the chosen server first, then the other one; a missing table
+                    # is reported in the stats instead of failing the whole run.
+                    order = [tgt_cur, src_cur] if lt_cfg.get("connection") == "target" else [src_cur, tgt_cur]
+                    for lt_cur in order:
+                        try:
+                            for name, ids in load_list_translation(lt_cur, lt_cfg).items():
+                                list_xw.setdefault(name, set()).update(ids)
+                            lt_error = ""
+                            break
+                        except Exception as le:
+                            lt_error = f"{lt_cfg.get('table')} could not be read: {le}"
+                    if lt_error:
+                        print(f"[list translation] {lt_error}")
+            list_xw_hits = 0
             src_conn.close(); tgt_conn.close()
             with lock: jobs[job_id]["progress"] = 60
             check_cancel()
@@ -1471,7 +2069,9 @@ def compare(req: Dict[str, Any]):
                     rule    = f.get("rule", "exact")
                     sv      = s.get(src_col)
                     tv      = t.get(tgt_col)
-                    status  = compare_field_values(sv, tv, src_col, rule)
+                    status  = compare_field_values(sv, tv, src_col, rule, list_xw)
+                    if list_xw and rule == "value_in_list" and status == "MATCHED" and not value_in_list_match(sv, tv):
+                        list_xw_hits += 1
                     results_batch.append({
                         "key":    str(key),
                         "field":  src_col,
@@ -1520,6 +2120,9 @@ def compare(req: Dict[str, Any]):
                 "source_only":       source_only_count,
                 "target_only":       target_only_count,
                 "null_mismatches":   null_mismatch_count,
+                "list_translation_entries": len(list_xw) if list_xw is not None else None,
+                "list_translation_hits":    list_xw_hits,
+                "list_translation_error":   lt_error,
                 "source_duplicates": source_dup_count,
                 "target_duplicates": target_dup_count,
                 "src_row_count":     src_row_count,
@@ -1533,33 +2136,9 @@ def compare(req: Dict[str, Any]):
                 "src_dedupe_removed": src_dedupe_removed,
                 "tgt_dedupe_removed": tgt_dedupe_removed,
                 "dedupe_mode":        "standard_max" if dedupe_is_standard else "generic_first",
+                "compare_mode":       "row",
             }
-            # ── v9.3 Observability: evaluate quality gates + detect anomalies ──
-            test_case_name = req.get("testCaseNo", "N/A")
-            try:
-                gate_status, gate_alerts = evaluate_gates(test_case_name, job_id, stats)
-            except Exception as ge:
-                print(f"[gates] evaluation failed: {ge}")
-                gate_status, gate_alerts = "", []
-            try:
-                anomaly_alerts = detect_anomalies(test_case_name, job_id, stats)
-            except Exception as ae:
-                print(f"[anomaly] detection failed: {ae}")
-                anomaly_alerts = []
-            all_alerts = gate_alerts + anomaly_alerts
-            stats["gate_status"] = gate_status
-            stats["alerts"]      = all_alerts
-
-            save_to_history(job_id, test_case_name, "COMPLETED", accuracy, stats,
-                            gate_status=gate_status, alerts=all_alerts)
-            with lock:
-                jobs[job_id]["status"]   = "COMPLETED"
-                jobs[job_id]["progress"] = 100
-                jobs[job_id]["stats"]    = stats
-                execution_signatures.discard(signature)
-                cancel_events.pop(job_id, None)
-            print(f"=== ETL DONE (v9.2-BR) | kmr={key_match_rate}% acc={field_accuracy}% "
-                  f"gate={gate_status or '-'} alerts={len(all_alerts)} ===\n")
+            finish(stats)
 
         except Exception as e:
             is_cancel = "cancelled" in str(e).lower()
@@ -1628,7 +2207,9 @@ def field_summary(job_id: str):
             SELECT
                 field,
                 SUM(CASE WHEN status = 'MATCHED'       THEN 1 ELSE 0 END) AS matched,
-                SUM(CASE WHEN status = 'MISMATCH'      THEN 1 ELSE 0 END) AS mismatched,
+                -- row mode: MISMATCH; set mode: every SET_* / INVALID_* / PRIMARY_* problem
+                SUM(CASE WHEN status NOT IN ('MATCHED', 'NULL_MISMATCH', 'SET_EXTRA_ALLOWED')
+                         THEN 1 ELSE 0 END) AS mismatched,
                 SUM(CASE WHEN status = 'NULL_MISMATCH' THEN 1 ELSE 0 END) AS null_mismatch,
                 COUNT(*) AS total
             FROM execution_results
@@ -1653,6 +2234,23 @@ def field_summary(job_id: str):
                 "accuracy":     accuracy
             })
         return {"summary": summary}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/db/set-summary/{job_id}")
+def set_summary(job_id: str):
+    """Set compare: one line per distinct remap / drop / extra, with key counts."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cur  = conn.cursor()
+        cur.execute(
+            f"SELECT source_value, target_value, status FROM execution_results "
+            f"WHERE job_id = ? AND status IN ({', '.join('?' * len(SUMMARY_STATUSES))})",
+            [job_id, *SUMMARY_STATUSES],
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return {"summary": summarize_set_outcomes(rows)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
